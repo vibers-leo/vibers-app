@@ -1,31 +1,42 @@
 {
-  "cli": {
-    "version": ">= 15.0.0",
-    "appVersionSource": "remote"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "simulator": true
-      }
+    "cli": {
+        "version": ">= 13.2.0",
+        "appVersionSource": "remote"
     },
-    "preview": {
-      "distribution": "internal",
-      "autoIncrement": true
+    "build": {
+        "development": {
+            "developmentClient": true,
+            "distribution": "internal",
+            "ios": { "simulator": true },
+            "android": { "buildType": "apk" }
+        },
+        "preview": {
+            "distribution": "internal",
+            "env": {
+                "EXPO_PUBLIC_APP_ENV": "staging",
+                "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
+            },
+            "android": { "buildType": "apk" }
+        },
+        "production": {
+            "env": {
+                "EXPO_PUBLIC_APP_ENV": "production",
+                "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
+            },
+            "ios": { "autoIncrement": "buildNumber" },
+            "android": { "buildType": "app-bundle", "autoIncrement": "versionCode" }
+        }
     },
-    "production": {
-      "autoIncrement": true
+    "submit": {
+        "production": {
+            "ios": {
+                "appleId": "juuuno@naver.com",
+                "appleTeamId": "84SS43LYKR"
+            },
+            "android": {
+                "serviceAccountKeyPath": "./google-play-service-account.json",
+                "track": "internal"
+            }
+        }
     }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "appleId": "juuuno2@gmail.com",
-        "ascAppId": "",
-        "appleTeamId": ""
-      }
-    }
-  }
 }
