@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, Pressable, Dimensions } from "react-native";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Zap, ArrowRight, Bell, Menu, Grid, Smartphone, Layout as LayoutIcon, Cpu, ChevronRight, Globe, Layers, Users, Heart, Star, Sparkles, MapPin, Activity } from "lucide-react-native";
+import { Zap, ArrowRight, Bell, Menu, Grid, Smartphone, Layout as LayoutIcon, Cpu, ChevronRight, Globe, Layers, Users, Heart, Star, Sparkles, MapPin, Activity, User } from "lucide-react-native";
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp, FadeIn, Layout, SlideInRight } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
@@ -31,6 +32,12 @@ const PORTFOLIO = [
 ];
 
 export default function HomeScreen() {
+  const router = useRouter();
+
+  const handleLoginPress = () => {
+    router.push("/(auth)/login");
+  };
+
   return (
     <View className="flex-1 bg-[#050505]">
       <StatusBar style="light" />
@@ -44,8 +51,11 @@ export default function HomeScreen() {
            <Text className="text-white text-2xl font-black tracking-tight uppercase">Vibers</Text>
         </View>
         <View className="flex-row items-center gap-4">
-           <Pressable className="w-10 h-10 bg-white/5 rounded-xl items-center justify-center border border-white/5">
-              <Bell size={20} color="#fff" />
+           <Pressable 
+             onPress={handleLoginPress}
+             className="w-10 h-10 bg-[#39FF14]/10 rounded-xl items-center justify-center border border-[#39FF14]/20"
+           >
+              <User size={20} color="#39FF14" />
            </Pressable>
            <Pressable className="w-10 h-10 bg-white/5 rounded-xl items-center justify-center border border-white/5">
               <Menu size={20} color="#fff" />
