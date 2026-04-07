@@ -1,0 +1,15 @@
+{
+  "name": "vibers-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "계발자들(Vibers) 내부 허브 앱",
+  "scripts": {
+    "start": "cd app && expo start",
+    "ios": "cd app && expo run:ios",
+    "android": "cd app && expo run:android",
+    "web": "cd app && expo start --web",
+    "build:ios": "cd app && eas build -p ios",
+    "build:android": "cd app && eas build -p android",
+    "install": "cd app && bun install"
+  }
+}

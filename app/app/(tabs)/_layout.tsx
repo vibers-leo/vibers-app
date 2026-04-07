@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Briefcase, Users, MessageCircle, Settings } from "lucide-react-native";
+import { Home, MessageCircle, Monitor, Settings } from "lucide-react-native";
 
 export default function TabLayout() {
   return (
@@ -8,7 +8,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: "#39FF14",
         tabBarInactiveTintColor: "#555555",
         tabBarStyle: {
-          borderTopColor: "#2a2a2a",
+          borderTopColor: "#1a1a1a",
           backgroundColor: "#0a0a0a",
         },
         headerStyle: {
@@ -30,24 +30,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="services"
+        name="chat"
         options={{
-          title: "서비스",
-          tabBarIcon: ({ color, size }) => <Briefcase size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="clients"
-        options={{
-          title: "고객 관리",
-          tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="contact"
-        options={{
-          title: "문의",
+          title: "채팅",
           tabBarIcon: ({ color, size }) => <MessageCircle size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="connect"
+        options={{
+          title: "PC 연결",
+          tabBarIcon: ({ color, size }) => <Monitor size={size} color={color} />,
         }}
       />
       <Tabs.Screen

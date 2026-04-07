@@ -1,69 +1,134 @@
-import { View, Text, ScrollView, Pressable, Switch } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Bell, Moon, Shield, Info, LogOut, ChevronRight } from "lucide-react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch } from "react-native";
 import { useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Key, Volume2, Globe, ChevronRight } from "lucide-react-native";
 
 export default function SettingsScreen() {
-  const [notifications, setNotifications] = useState(true);
-  const [darkMode, setDarkMode] = useState(true);
+  const [claudeKey, setClaudeKey] = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [englishMode, setEnglishMode] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   return (
-    <SafeAreaView edges={["bottom"]} className="flex-1 bg-bg">
-      <ScrollView className="flex-1 px-5 pt-4">
-        <Text className="text-text text-2xl font-bold mb-6">설정</Text>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.pageTitle}>설정</Text>
 
-        <Text className="text-text-muted text-xs font-bold uppercase mb-2 ml-1">일반</Text>
-        <View className="bg-card rounded-xl border border-border mb-6">
-          <View className="flex-row items-center justify-between p-4 border-b border-border">
-            <View className="flex-row items-center">
-              <Bell size={20} color="#39FF14" />
-              <Text className="text-text ml-3">알림</Text>
+        {/* API 키 섹션 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>API 키</Text>
+
+          <View style={styles.field}>
+            <View style={styles.fieldHeader}>
+              <Key size={16} color="#39FF14" />
+              <Text style={styles.fieldLabel}>Claude API Key</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={claudeKey}
+              onChangeText={setClaudeKey}
+              placeholder="sk-ant-..."
+              placeholderTextColor="#444"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <Text style={styles.fieldHint}>채팅 기능에 필요합니다</Text>
+          </View>
+
+          <View style={styles.field}>
+            <View style={styles.fieldHeader}>
+              <Key size={16} color="#888" />
+              <Text style={styles.fieldLabel}>OpenAI API Key (Whisper STT)</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={openaiKey}
+              onChangeText={setOpenaiKey}
+              placeholder="sk-..."
+              placeholderTextColor="#444"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <Text style={styles.fieldHint}>음성 입력 기능에 필요합니다</Text>
+          </View>
+
+          <TouchableOpacity style={styles.saveBtn} activeOpacity={0.85}>
+            <Text style={styles.saveBtnText}>저장</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 음성 설정 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>음성 설정</Text>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Volume2 size={16} color="#39FF14" />
+              <View>
+                <Text style={styles.toggleLabel}>TTS 자동 재생</Text>
+                <Text style={styles.toggleDesc}>Claude 응답을 자동으로 읽어줌</Text>
+              </View>
             </View>
             <Switch
-              value={notifications}
-              onValueChange={setNotifications}
-              trackColor={{ false: "#2a2a2a", true: "#39FF14" }}
-              thumbColor="#fff"
+              value={ttsEnabled}
+              onValueChange={setTtsEnabled}
+              trackColor={{ false: "#222", true: "rgba(57,255,20,0.4)" }}
+              thumbColor={ttsEnabled ? "#39FF14" : "#555"}
             />
           </View>
-          <View className="flex-row items-center justify-between p-4">
-            <View className="flex-row items-center">
-              <Moon size={20} color="#39FF14" />
-              <Text className="text-text ml-3">다크 모드</Text>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Globe size={16} color="#39FF14" />
+              <View>
+                <Text style={styles.toggleLabel}>영어 학습 모드</Text>
+                <Text style={styles.toggleDesc}>Claude가 영어로 답변하고 읽어줌</Text>
+              </View>
             </View>
             <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
-              trackColor={{ false: "#2a2a2a", true: "#39FF14" }}
-              thumbColor="#fff"
+              value={englishMode}
+              onValueChange={setEnglishMode}
+              trackColor={{ false: "#222", true: "rgba(57,255,20,0.4)" }}
+              thumbColor={englishMode ? "#39FF14" : "#555"}
             />
           </View>
         </View>
 
-        <Text className="text-text-muted text-xs font-bold uppercase mb-2 ml-1">정보</Text>
-        <View className="bg-card rounded-xl border border-border mb-6">
-          <Pressable className="flex-row items-center justify-between p-4 border-b border-border">
-            <View className="flex-row items-center">
-              <Shield size={20} color="#888" />
-              <Text className="text-text ml-3">개인정보 처리방침</Text>
-            </View>
-            <ChevronRight size={18} color="#555" />
-          </Pressable>
-          <Pressable className="flex-row items-center justify-between p-4">
-            <View className="flex-row items-center">
-              <Info size={20} color="#888" />
-              <Text className="text-text ml-3">앱 정보</Text>
-            </View>
-            <Text className="text-text-muted text-sm">v1.0.0</Text>
-          </Pressable>
+        {/* 앱 정보 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>앱 정보</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>버전</Text>
+            <Text style={styles.infoValue}>1.0.0</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Phase</Text>
+            <Text style={styles.infoValue}>1 — UI 셋업</Text>
+          </View>
         </View>
-
-        <Pressable className="bg-error/10 rounded-xl p-4 flex-row items-center justify-center">
-          <LogOut size={20} color="#ff3366" />
-          <Text className="text-error font-bold ml-2">로그아웃</Text>
-        </Pressable>
-        <View className="h-8" />
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#050505" },
+  scroll: { padding: 24, gap: 24 },
+  pageTitle: { color: "#fff", fontSize: 28, fontWeight: "900", marginBottom: 8 },
+  section: { backgroundColor: "#0e0e0e", borderRadius: 20, padding: 20, gap: 16 },
+  sectionTitle: { color: "#39FF14", fontSize: 12, fontWeight: "900", letterSpacing: 1.5 },
+  field: { gap: 8 },
+  fieldHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  fieldLabel: { color: "#ccc", fontSize: 14, fontWeight: "700" },
+  input: { backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#2a2a2a", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff", fontSize: 14 },
+  fieldHint: { color: "#444", fontSize: 12 },
+  saveBtn: { backgroundColor: "#39FF14", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 4 },
+  saveBtnText: { color: "#000", fontSize: 15, fontWeight: "900" },
+  toggleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  toggleInfo: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  toggleLabel: { color: "#ccc", fontSize: 14, fontWeight: "700" },
+  toggleDesc: { color: "#444", fontSize: 12, marginTop: 2 },
+  infoRow: { flexDirection: "row", justifyContent: "space-between" },
+  infoLabel: { color: "#555", fontSize: 14 },
+  infoValue: { color: "#888", fontSize: 14 },
+});

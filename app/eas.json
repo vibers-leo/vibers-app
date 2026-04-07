@@ -1,42 +1,44 @@
 {
-    "cli": {
-        "version": ">= 13.2.0",
-        "appVersionSource": "remote"
+  "cli": {
+    "version": ">= 13.2.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      }
     },
-    "build": {
-        "development": {
-            "developmentClient": true,
-            "distribution": "internal",
-            "ios": { "simulator": true },
-            "android": { "buildType": "apk" }
-        },
-        "preview": {
-            "distribution": "internal",
-            "env": {
-                "EXPO_PUBLIC_APP_ENV": "staging",
-                "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
-            },
-            "android": { "buildType": "apk" }
-        },
-        "production": {
-            "env": {
-                "EXPO_PUBLIC_APP_ENV": "production",
-                "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
-            },
-            "ios": { "autoIncrement": "buildNumber" },
-            "android": { "buildType": "app-bundle", "autoIncrement": "versionCode" }
-        }
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     },
-    "submit": {
-        "production": {
-            "ios": {
-                "appleId": "juuuno@naver.com",
-                "appleTeamId": "84SS43LYKR"
-            },
-            "android": {
-                "serviceAccountKeyPath": "./google-play-service-account.json",
-                "track": "internal"
-            }
-        }
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://vibers.co.kr"
+      },
+      "ios": {
+        "autoIncrement": "buildNumber"
+      },
+      "android": {
+        "buildType": "app-bundle",
+        "autoIncrement": "versionCode"
+      }
     }
+  },
+  "submit": {
+    "production": {}
+  }
 }
