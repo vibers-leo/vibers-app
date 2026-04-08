@@ -23,7 +23,7 @@ export default function ChatScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [provider, setProvider] = useState<Provider>("gemini");
-  const [model, setModel] = useState("gemini-2.0-flash");
+  const [model, setModel] = useState("gemini-2.0-flash-lite");
   const [apiKey, setApiKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
   const [englishMode, setEnglishMode] = useState(false);
