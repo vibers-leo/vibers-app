@@ -1,80 +1,80 @@
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Send, Mic, MicOff, Bot, User } from "lucide-react-native";
+import { sendMessage, loadSettings, type Provider } from "../../services/ai-client";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  timestamp: Date;
 }
 
+const SYSTEM_KO = "당신은 바이브코딩 전문 AI 어시스턴트입니다. 코딩 질문에 친절하고 실용적으로 답변해주세요.";
+const SYSTEM_EN = "You are an expert vibe coding assistant. Answer in English only. Be concise and practical.";
+
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: "안녕하세요! 저는 Claude입니다. 바이브코딩을 도와드릴게요. 무엇을 만들고 싶으신가요?",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [provider, setProvider] = useState<Provider>("gemini");
+  const [model, setModel] = useState("gemini-2.0-flash");
+  const [apiKey, setApiKey] = useState("");
+  const [englishMode, setEnglishMode] = useState(false);
+  const [noKey, setNoKey] = useState(false);
   const listRef = useRef<FlatList>(null);
 
-  const sendMessage = async () => {
+  useEffect(() => {
+    loadSettings().then((s) => {
+      setProvider(s.provider);
+      setModel(s.model);
+      setEnglishMode(s.englishMode);
+      const key = s.provider === "claude" ? s.claudeKey : s.provider === "gemini" ? s.geminiKey : s.groqKey;
+      setApiKey(key);
+      const greeting = s.englishMode
+        ? "Hi! I'm your vibe coding assistant. What would you like to build?"
+        : "안녕하세요! 바이브코딩 AI입니다. 무엇을 만들고 싶으신가요?";
+      setMessages([{ id: "0", role: "assistant", content: greeting }]);
+    });
+  }, []);
+
+  const sendMsg = async () => {
     if (!input.trim() || isLoading) return;
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
-    };
+    if (!apiKey) {
+      setNoKey(true);
+      setTimeout(() => setNoKey(false), 3000);
+      return;
+    }
+
+    const userMsg: Message = { id: Date.now().toString(), role: "user", content: input.trim() };
+    const history = [...messages, userMsg].filter((m) => m.id !== "0").map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setIsLoading(true);
 
     try {
-      // TODO: Claude API 연결 (Phase 1-4)
-      // 임시 응답
-      await new Promise((r) => setTimeout(r, 1000));
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "Claude API 키를 설정 탭에서 입력해주세요. 연결되면 실제 응답을 드릴게요! 🚀",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-    } catch (e) {
-      console.error(e);
+      const reply = await sendMessage(history, provider, model, apiKey, englishMode ? SYSTEM_EN : SYSTEM_KO);
+      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: reply }]);
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: `오류: ${e.message}` }]);
     } finally {
       setIsLoading(false);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
-
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === "user";
     return (
       <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
-        {!isUser && (
-          <View style={styles.avatar}>
-            <Bot size={16} color="#39FF14" />
-          </View>
-        )}
+        {!isUser && <View style={styles.avatar}><Bot size={16} color="#39FF14" /></View>}
         <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
           <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>{item.content}</Text>
         </View>
-        {isUser && (
-          <View style={[styles.avatar, styles.avatarUser]}>
-            <User size={16} color="#000" />
-          </View>
-        )}
+        {isUser && <View style={[styles.avatar, styles.avatarUser]}><User size={16} color="#000" /></View>}
       </View>
     );
   };
@@ -94,7 +94,13 @@ export default function ChatScreen() {
         {isLoading && (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color="#39FF14" />
-            <Text style={styles.loadingText}>Claude가 생각 중...</Text>
+            <Text style={styles.loadingText}>AI가 생각 중...</Text>
+          </View>
+        )}
+
+        {noKey && (
+          <View style={styles.noKeyBanner}>
+            <Text style={styles.noKeyText}>⚙️ 설정 탭에서 API 키를 입력해주세요</Text>
           </View>
         )}
 
@@ -110,16 +116,16 @@ export default function ChatScreen() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="메시지를 입력하거나 🎙️ 눌러 말하기"
+            placeholder={englishMode ? "Type or 🎙️ speak..." : "메시지 입력 또는 🎙️ 눌러 말하기"}
             placeholderTextColor="#444"
             multiline
             maxLength={2000}
-            onSubmitEditing={sendMessage}
+            onSubmitEditing={sendMsg}
           />
 
           <TouchableOpacity
             style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
-            onPress={sendMessage}
+            onPress={sendMsg}
             disabled={!input.trim() || isLoading}
           >
             <Send size={20} color={input.trim() && !isLoading ? "#000" : "#333"} />
@@ -144,6 +150,8 @@ const styles = StyleSheet.create({
   bubbleTextUser: { color: "#000", fontWeight: "600" },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 8 },
   loadingText: { color: "#39FF14", fontSize: 13, fontWeight: "600" },
+  noKeyBanner: { backgroundColor: "#1a0a00", borderTopWidth: 1, borderColor: "#39FF14", paddingHorizontal: 20, paddingVertical: 10 },
+  noKeyText: { color: "#39FF14", fontSize: 13, textAlign: "center" },
   inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: "#1a1a1a", backgroundColor: "#080808" },
   micBtn: { width: 44, height: 44, backgroundColor: "rgba(57,255,20,0.08)", borderRadius: 22, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(57,255,20,0.2)" },
   micBtnActive: { backgroundColor: "#39FF14" },
