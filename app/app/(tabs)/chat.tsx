@@ -1,7 +1,7 @@
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Animated } from "react-native";
 import { useState, useRef, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Send, Mic, MicOff, Bot, User } from "lucide-react-native";
+import { Send, Bot, User } from "lucide-react-native";
 import { sendMessage, loadSettings, type Provider } from "../../services/ai-client";
 
 interface Message {
@@ -23,6 +23,8 @@ export default function ChatScreen() {
   const [apiKey, setApiKey] = useState("");
   const [englishMode, setEnglishMode] = useState(false);
   const [noKey, setNoKey] = useState(false);
+  const [showInput, setShowInput] = useState(false);
+  const micScale = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -33,15 +35,25 @@ export default function ChatScreen() {
       const key = s.provider === "claude" ? s.claudeKey : s.provider === "gemini" ? s.geminiKey : s.groqKey;
       setApiKey(key);
       const greeting = s.englishMode
-        ? "Hi! I'm your vibe coding assistant. What would you like to build?"
-        : "안녕하세요! 바이브코딩 AI입니다. 무엇을 만들고 싶으신가요?";
+        ? "Hi! I'm your vibe coding assistant. Tap the mic or type below."
+        : "안녕하세요! 마이크를 탭하거나 텍스트를 입력해보세요.";
       setMessages([{ id: "0", role: "assistant", content: greeting }]);
     });
   }, []);
 
+  const onMicPress = () => {
+    // TODO: Phase 2 — Whisper STT
+    // 지금은 텍스트 입력창 토글
+    setShowInput((v) => !v);
+    setIsRecording((v) => !v);
+    Animated.sequence([
+      Animated.spring(micScale, { toValue: 0.85, useNativeDriver: true }),
+      Animated.spring(micScale, { toValue: 1, useNativeDriver: true }),
+    ]).start();
+  };
+
   const sendMsg = async () => {
     if (!input.trim() || isLoading) return;
-
     if (!apiKey) {
       setNoKey(true);
       setTimeout(() => setNoKey(false), 3000);
@@ -49,7 +61,9 @@ export default function ChatScreen() {
     }
 
     const userMsg: Message = { id: Date.now().toString(), role: "user", content: input.trim() };
-    const history = [...messages, userMsg].filter((m) => m.id !== "0").map((m) => ({ role: m.role, content: m.content }));
+    const history = [...messages, userMsg]
+      .filter((m) => m.id !== "0")
+      .map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -81,7 +95,11 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={90}
+      >
         <FlatList
           ref={listRef}
           data={messages}
@@ -104,32 +122,52 @@ export default function ChatScreen() {
           </View>
         )}
 
-        <View style={styles.inputRow}>
-          <TouchableOpacity
-            style={[styles.micBtn, isRecording && styles.micBtnActive]}
-            onPress={() => setIsRecording((v) => !v)}
-          >
-            {isRecording ? <MicOff size={20} color="#000" /> : <Mic size={20} color="#39FF14" />}
-          </TouchableOpacity>
+        {/* 입력 미리보기 — 키보드 위 */}
+        {showInput && input.length > 0 && (
+          <View style={styles.previewBar}>
+            <Text style={styles.previewText} numberOfLines={2}>{input}</Text>
+          </View>
+        )}
 
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder={englishMode ? "Type or 🎙️ speak..." : "메시지 입력 또는 🎙️ 눌러 말하기"}
-            placeholderTextColor="#444"
-            multiline
-            maxLength={2000}
-            onSubmitEditing={sendMsg}
-          />
+        {/* 텍스트 입력 영역 */}
+        {showInput && (
+          <View style={styles.textInputRow}>
+            <TextInput
+              style={styles.textInput}
+              value={input}
+              onChangeText={setInput}
+              placeholder={englishMode ? "Type your message..." : "메시지 입력..."}
+              placeholderTextColor="#444"
+              multiline
+              maxLength={2000}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
+              onPress={sendMsg}
+              disabled={!input.trim() || isLoading}
+            >
+              <Send size={20} color={input.trim() && !isLoading ? "#000" : "#333"} />
+            </TouchableOpacity>
+          </View>
+        )}
 
-          <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
-            onPress={sendMsg}
-            disabled={!input.trim() || isLoading}
-          >
-            <Send size={20} color={input.trim() && !isLoading ? "#000" : "#333"} />
-          </TouchableOpacity>
+        {/* 메인 마이크 버튼 */}
+        <View style={styles.micRow}>
+          <Animated.View style={{ transform: [{ scale: micScale }] }}>
+            <TouchableOpacity
+              style={[styles.micBtn, isRecording && styles.micBtnActive]}
+              onPress={onMicPress}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.micIcon, isRecording && styles.micIconActive]}>
+                {isRecording ? "⌨️" : "🎤"}
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+          <Text style={styles.micHint}>
+            {isRecording ? "텍스트 입력 중" : "탭해서 입력"}
+          </Text>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -138,7 +176,7 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#050505" },
-  list: { padding: 16, gap: 12 },
+  list: { padding: 16, gap: 12, paddingBottom: 8 },
   messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 4 },
   messageRowUser: { justifyContent: "flex-end" },
   avatar: { width: 28, height: 28, backgroundColor: "rgba(57,255,20,0.1)", borderRadius: 14, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(57,255,20,0.2)" },
@@ -152,10 +190,19 @@ const styles = StyleSheet.create({
   loadingText: { color: "#39FF14", fontSize: 13, fontWeight: "600" },
   noKeyBanner: { backgroundColor: "#1a0a00", borderTopWidth: 1, borderColor: "#39FF14", paddingHorizontal: 20, paddingVertical: 10 },
   noKeyText: { color: "#39FF14", fontSize: 13, textAlign: "center" },
-  inputRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: "#1a1a1a", backgroundColor: "#080808" },
-  micBtn: { width: 44, height: 44, backgroundColor: "rgba(57,255,20,0.08)", borderRadius: 22, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(57,255,20,0.2)" },
-  micBtnActive: { backgroundColor: "#39FF14" },
-  input: { flex: 1, backgroundColor: "#111", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: "#fff", fontSize: 15, borderWidth: 1, borderColor: "#222", maxHeight: 120 },
+  // 미리보기
+  previewBar: { marginHorizontal: 16, marginBottom: 4, backgroundColor: "#0d1a0d", borderRadius: 12, padding: 12, borderWidth: 1, borderColor: "rgba(57,255,20,0.2)" },
+  previewText: { color: "rgba(57,255,20,0.7)", fontSize: 14, lineHeight: 20 },
+  // 텍스트 입력
+  textInputRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  textInput: { flex: 1, backgroundColor: "#111", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: "#fff", fontSize: 15, borderWidth: 1, borderColor: "#39FF14", maxHeight: 120 },
   sendBtn: { width: 44, height: 44, backgroundColor: "#39FF14", borderRadius: 22, justifyContent: "center", alignItems: "center" },
   sendBtnDisabled: { backgroundColor: "#1a1a1a" },
+  // 마이크
+  micRow: { alignItems: "center", paddingVertical: 20, gap: 10 },
+  micBtn: { width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(57,255,20,0.1)", borderWidth: 2, borderColor: "rgba(57,255,20,0.4)", justifyContent: "center", alignItems: "center" },
+  micBtnActive: { backgroundColor: "rgba(57,255,20,0.2)", borderColor: "#39FF14" },
+  micIcon: { fontSize: 36 },
+  micIconActive: { fontSize: 36 },
+  micHint: { color: "#444", fontSize: 13 },
 });
