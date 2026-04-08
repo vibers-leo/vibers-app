@@ -233,7 +233,7 @@ export default function ConnectScreen() {
 
         {/* 프로젝트 탭 */}
         {connected && (
-          <>
+          <View style={{ gap: 12 }}>
             <Text style={styles.sectionTitle}>PROJECTS</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectTabScroll}>
               {DEFAULT_PROJECTS.map((p) => (
@@ -297,8 +297,10 @@ export default function ConnectScreen() {
                 ))}
               </View>
             )}
-          </>
+          </View>
         )}
+
+        </>}
 
         {/* ====== VeryTerm 탭 ====== */}
         {activeTab === "veryterm" && (
