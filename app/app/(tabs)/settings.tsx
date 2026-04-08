@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
   fieldLabelActive: { color: "#ccc" },
   activeBadge: { backgroundColor: "rgba(57,255,20,0.15)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   activeBadgeText: { color: "#39FF14", fontSize: 10, fontWeight: "800" },
-  input: { backgroundColor: "#111", borderWidth: 1, borderColor: "#1a1a1a", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, color: "#fff", fontSize: 13 },
+  input: { backgroundColor: "#111", borderWidth: 1, borderColor: "#1a1a1a", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, color: "#fff", fontSize: 13, height: 46 },
   inputActive: { borderColor: "rgba(57,255,20,0.3)" },
   fieldHint: { color: "#2e2e2e", fontSize: 11 },
   modelRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#1a1a1a" },
