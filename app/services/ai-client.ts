@@ -78,7 +78,7 @@ export async function loadSettings() {
     ]);
   return {
     provider: (provider as Provider) || "gemini",
-    model: model || "gemini-2.0-flash",
+    model: model || "gemini-2.0-flash-lite",
     claudeKey: claudeKey || "",
     geminiKey: geminiKey || "",
     groqKey: groqKey || "",
