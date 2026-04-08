@@ -32,9 +32,9 @@ export const PROVIDERS: ProviderConfig[] = [
     id: "gemini",
     name: "Gemini (Google)",
     models: [
-      { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite (무료)" },
-      { id: "gemini-2.5-flash-preview-04-17", name: "Gemini 2.5 Flash (무료)" },
+      { id: "gemini-2.5-flash-preview-04-17", name: "Gemini 2.5 Flash (최신, 무료)" },
       { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (무료)" },
+      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (무료)" },
     ],
     keyPlaceholder: "AIza...",
     keyHint: "aistudio.google.com에서 무료 발급",
@@ -147,8 +147,9 @@ async function sendGemini(
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
   }
+  const apiVersion = model.includes("preview") || model.includes("2.5") ? "v1beta" : "v1";
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

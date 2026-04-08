@@ -9,9 +9,9 @@ import { STORE_KEYS, loadSettings, type Provider } from "../../services/ai-clien
 const MODEL_INFO: Record<string, { desc: string; speed: string; free: boolean; best: string }> = {
   "claude-sonnet-4-6":        { desc: "Anthropic 최신 고성능 모델", speed: "보통", free: false, best: "복잡한 코딩, 분석" },
   "claude-haiku-4-5-20251001":{ desc: "Claude 경량 고속 모델", speed: "빠름", free: false, best: "빠른 답변, 간단한 질문" },
-  "gemini-2.0-flash-lite":    { desc: "Google 최신 경량 무료 모델", speed: "매우 빠름", free: true, best: "일반 대화, 코딩 질문" },
-  "gemini-2.5-flash-preview-04-17": { desc: "Google 최신 고성능 무료 모델", speed: "보통", free: true, best: "복잡한 추론, 긴 문서" },
-  "gemini-1.5-flash":         { desc: "Google 안정적인 무료 모델", speed: "빠름", free: true, best: "안정적인 범용 사용" },
+  "gemini-2.5-flash-preview-04-17": { desc: "Google 최신 고성능 모델 (2025)", speed: "보통", free: true, best: "복잡한 추론, 코딩, 긴 문서" },
+  "gemini-1.5-flash":         { desc: "Google 안정적인 고속 무료 모델", speed: "빠름", free: true, best: "일반 대화, 코딩 질문" },
+  "gemini-1.5-pro":           { desc: "Google 고성능 무료 모델", speed: "보통", free: true, best: "복잡한 분석, 긴 대화" },
   "llama-3.3-70b-versatile":  { desc: "Meta Llama 70B (Groq 초고속)", speed: "초고속", free: true, best: "코딩, 번역, 분석" },
   "gemma2-9b-it":             { desc: "Google Gemma 2 9B (Groq)", speed: "초고속", free: true, best: "가벼운 대화, 빠른 응답" },
 };
@@ -22,9 +22,9 @@ const PROVIDER_MODELS: Record<Provider, { id: string; name: string }[]> = {
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
   ],
   gemini: [
-    { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite" },
     { id: "gemini-2.5-flash-preview-04-17", name: "Gemini 2.5 Flash" },
     { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash" },
+    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
   ],
   groq: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
