@@ -1,6 +1,7 @@
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Animated } from "react-native";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { Send, Bot, User, Volume2, VolumeX } from "lucide-react-native";
 import { sendMessage, loadSettings, type Provider } from "../../services/ai-client";
 import { startRecording, stopRecording } from "../../services/stt";
@@ -34,6 +35,18 @@ export default function ChatScreen() {
   const micPulse = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList>(null);
 
+  const reloadSettings = useCallback(() => {
+    loadSettings().then((s) => {
+      setProvider(s.provider);
+      setModel(s.model);
+      setEnglishMode(s.englishMode);
+      setTtsEnabled(s.ttsEnabled);
+      setOpenaiKey(s.openaiKey);
+      const key = s.provider === "claude" ? s.claudeKey : s.provider === "gemini" ? s.geminiKey : s.groqKey;
+      setApiKey(key);
+    });
+  }, []);
+
   useEffect(() => {
     loadSettings().then((s) => {
       setProvider(s.provider);
@@ -49,6 +62,8 @@ export default function ChatScreen() {
       setMessages([{ id: "0", role: "assistant", content: greeting }]);
     });
   }, []);
+
+  useFocusEffect(reloadSettings);
 
   // 녹음 중 맥동 애니메이션
   useEffect(() => {
