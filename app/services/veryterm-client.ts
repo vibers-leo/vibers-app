@@ -134,6 +134,14 @@ export class VeryTermClient {
     };
   }
 
+  /** 최근 터미널 이벤트 조회 */
+  async getEvents(): Promise<any[]> {
+    const res = await fetch(`${this.base}/events`, { headers: this.headers() });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.events || [];
+  }
+
   async run(command: string, cwd?: string): Promise<string> {
     const res = await fetch(`${this.base}/run`, {
       method: "POST",
