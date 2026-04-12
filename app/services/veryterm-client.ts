@@ -100,6 +100,40 @@ export class VeryTermClient {
     if (!res.ok) throw new Error("서버 중지 실패");
   }
 
+  /** 터미널 세션에 WebSocket 연결 (실시간 스트리밍) */
+  connectTerminal(
+    projectId: string,
+    type: "main" | "server",
+    onOutput: (data: string) => void,
+    onClose?: () => void,
+  ): { send: (data: string) => void; close: () => void } {
+    const wsBase = this.base.replace("http://", "ws://");
+    const params = new URLSearchParams({ project: projectId, type });
+    if (this.token) params.set("token", this.token);
+    const ws = new WebSocket(`${wsBase}/ws/terminal?${params}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === "output" && msg.data) {
+          onOutput(msg.data);
+        }
+      } catch {}
+    };
+
+    ws.onclose = () => onClose?.();
+    ws.onerror = () => onClose?.();
+
+    return {
+      send: (data: string) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input", data }));
+        }
+      },
+      close: () => ws.close(),
+    };
+  }
+
   async run(command: string, cwd?: string): Promise<string> {
     const res = await fetch(`${this.base}/run`, {
       method: "POST",
