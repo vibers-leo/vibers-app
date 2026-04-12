@@ -37,7 +37,7 @@ class ZeroClawClient {
   private sessionId: string | null = null;
   private handlers: Map<string, ZeroClawEventHandler[]> = new Map();
 
-  constructor(ip: string, port = 8080) {
+  constructor(ip: string, port = 42617) {
     this.base = `http://${ip}:${port}`;
     this.wsUrl = `ws://${ip}:${port}`;
   }
@@ -215,7 +215,7 @@ export function isZCWsOpen(): boolean {
   return _client?.isWsConnected() ?? false;
 }
 
-export async function connectZC(ip: string, port = 8080): Promise<{ connected: boolean; needsPairing: boolean }> {
+export async function connectZC(ip: string, port = 42617): Promise<{ connected: boolean; needsPairing: boolean }> {
   const client = new ZeroClawClient(ip, port);
   const health = await client.health();
   if (!health) return { connected: false, needsPairing: false };

@@ -79,7 +79,7 @@ export default function ConnectScreen() {
 
   // ZeroClaw 상태
   const [zcIp, setZcIp] = useState("");
-  const [zcPort, setZcPort] = useState("8080");
+  const [zcPort, setZcPort] = useState("42617");
   const [zcConnected, setZcConnected] = useState(false);
   const [zcConnecting, setZcConnecting] = useState(false);
   const [zcNeedsPairing, setZcNeedsPairing] = useState(false);
@@ -105,7 +105,7 @@ export default function ConnectScreen() {
     const unsub2 = onZCChange(syncZC);
     SecureStore.getItemAsync("veryterm_ip").then((v) => v && setIp(v));
     SecureStore.getItemAsync("zeroclaw_ip").then((v) => v && setZcIp(v));
-    SecureStore.getItemAsync("zeroclaw_port").then((v) => v && setZcPort(v || "8080"));
+    SecureStore.getItemAsync("zeroclaw_port").then((v) => v && setZcPort(v || "42617"));
     // 자동 연결 시도
     autoConnect().then(syncState);
     autoConnectZC().then(syncZC);

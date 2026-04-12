@@ -121,10 +121,30 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.pageTitle}>설정</Text>
 
+        {/* AI 엔진 모드 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>AI 엔진</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.presetBtn, { flex: 1, paddingVertical: 12, alignItems: "center" as const }, styles.presetBtnActive]}
+              onPress={() => {}}
+            >
+              <Text style={[styles.presetText, styles.presetTextActive]}>로컬 AI (직접 호출)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.presetBtn, { flex: 1, paddingVertical: 12, alignItems: "center" as const, opacity: 0.7 }]}
+              onPress={() => {}}
+            >
+              <Text style={styles.presetText}>⚡ ZeroClaw (PC)</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.sectionDesc}>ZeroClaw는 PC 연결 탭에서 연결하면 자동 전환됩니다</Text>
+        </View>
+
         {/* API 키 입력 — 키 넣으면 자동 감지 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>API 키</Text>
-          <Text style={styles.sectionDesc}>키를 입력하면 AI 모델이 자동으로 선택됩니다</Text>
+          <Text style={styles.sectionTitle}>API 키 (로컬 AI)</Text>
+          <Text style={styles.sectionDesc}>ZeroClaw 미연결 시 직접 API를 호출합니다</Text>
 
           {[
             { k: "gemini" as const, label: "Gemini (Google)", placeholder: "AIza...", hint: "aistudio.google.com — 무료", active: provider === "gemini" },
