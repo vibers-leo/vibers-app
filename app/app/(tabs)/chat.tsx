@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Send, Bot, User, Volume2, VolumeX, Monitor, Zap } from "lucide-react-native";
 import { sendMessageStream, loadSettings, getKeyForProvider, type Provider } from "../../services/ai-client";
-import { getSharedClient, isConnected as vtIsConnected, projectsToPromptContext } from "../../services/veryterm-client";
+import { getSharedClient, isConnected as vtIsConnected, isPaired as vtIsPaired, projectsToPromptContext } from "../../services/veryterm-client";
 import { getZCClient, isZCConnected, isZCWsOpen, autoConnectZC, type ZeroClawMessage } from "../../services/zeroclaw-client";
 import { startRecording, stopRecording, setupSpeechEvents, setPartialCallback } from "../../services/stt";
 import { speak, stopSpeaking } from "../../services/tts";
@@ -94,6 +94,42 @@ export default function ChatScreen() {
   useFocusEffect(useCallback(() => {
     setAiMode(isZCConnected() && isZCWsOpen() ? "zeroclaw" : "local");
   }, []));
+
+  // PC 터미널 이벤트 수신 → 채팅에 시스템 메시지로 표시
+  useEffect(() => {
+    if (!vtIsConnected() || !vtIsPaired()) return;
+    const client = getSharedClient();
+    if (!client) return;
+
+    // 폴링으로 이벤트 체크 (WebSocket 터미널에 연결 안 됐을 때)
+    let lastEventTs = Date.now();
+    const interval = setInterval(async () => {
+      try {
+        const events = await client.getEvents();
+        const newEvents = events.filter((e: any) => e.timestamp > lastEventTs);
+        if (newEvents.length > 0) {
+          lastEventTs = newEvents[newEvents.length - 1].timestamp;
+          for (const event of newEvents) {
+            const emoji = event.type === 'build_success' ? '✅' :
+              event.type === 'build_fail' ? '❌' :
+              event.type === 'test_pass' ? '🧪✅' :
+              event.type === 'test_fail' ? '🧪❌' :
+              event.type === 'commit' ? '📝' :
+              event.type === 'server_start' ? '🚀' :
+              event.type === 'error' ? '⚠️' : 'ℹ️';
+            setMessages((prev) => [...prev, {
+              id: `evt-${event.timestamp}`,
+              role: "assistant" as const,
+              content: `${emoji} **PC 보고** — ${event.message}`,
+            }]);
+          }
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+      } catch {}
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // 음성인식 이벤트 리스너
   useEffect(() => {
