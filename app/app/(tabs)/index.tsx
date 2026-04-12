@@ -97,10 +97,10 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>시작 가이드</Text>
           {[
-            { step: "1", title: "무료 API 키 발급", desc: "aistudio.google.com → Gemini 키 무료 발급", done: false },
-            { step: "2", title: "설정에서 키 입력", desc: "설정 탭 → API 키 붙여넣기 → 저장", done: false },
+            { step: "1", title: "방법 A: 무료 키 발급", desc: "aistudio.google.com → Gemini 키 무료 발급 → 설정에 입력", done: false },
+            { step: "2", title: "방법 B: PC 연결 (키 불필요)", desc: "PC에서 ZeroClaw 실행 → 모바일에서 연결 → 끝!", done: false },
             { step: "3", title: "채팅 시작!", desc: "마이크로 말하거나 텍스트로 입력", done: false },
-            { step: "⚡", title: "PC 연결 (선택)", desc: "ZeroClaw로 PC에서 AI 실행 → 키 불필요", done: false },
+            { step: "💡", title: "완전 오프라인도 가능", desc: "PC에 Ollama 설치 → ZeroClaw에서 로컬 AI 사용", done: false },
           ].map((g, i) => (
             <View key={i} style={styles.guideRow}>
               <View style={styles.guideStep}>
