@@ -33,6 +33,14 @@ export default {
         { microphonePermission: '바이버스챗이 음성 입력을 위해 마이크 권한이 필요합니다.' },
       ],
       './plugins/withXcode26Fix',
+      'expo-image',
+      [
+        'expo-speech-recognition',
+        {
+          microphonePermission: '바이버스챗이 음성 입력을 위해 마이크 권한이 필요합니다.',
+          speechRecognitionPermission: '바이버스챗이 음성 인식을 위해 권한이 필요합니다.',
+        },
+      ],
     ],
     extra: {
       eas: {

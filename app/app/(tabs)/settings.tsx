@@ -14,6 +14,8 @@ const MODEL_INFO: Record<string, { desc: string; speed: string; free: boolean; b
   "gemini-1.5-pro":           { desc: "Google 고성능 무료 모델", speed: "보통", free: true, best: "복잡한 분석, 긴 대화" },
   "llama-3.3-70b-versatile":  { desc: "Meta Llama 70B (Groq 초고속)", speed: "초고속", free: true, best: "코딩, 번역, 분석" },
   "gemma2-9b-it":             { desc: "Google Gemma 2 9B (Groq)", speed: "초고속", free: true, best: "가벼운 대화, 빠른 응답" },
+  "gpt-4o":                   { desc: "OpenAI 최신 멀티모달 모델", speed: "보통", free: false, best: "복잡한 코딩, 분석, 이미지" },
+  "gpt-4o-mini":              { desc: "OpenAI 경량 고속 모델", speed: "빠름", free: false, best: "빠른 답변, 간단한 질문" },
 };
 
 const PROVIDER_MODELS: Record<Provider, { id: string; name: string }[]> = {
@@ -30,12 +32,17 @@ const PROVIDER_MODELS: Record<Provider, { id: string; name: string }[]> = {
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
     { id: "gemma2-9b-it", name: "Gemma 2 9B" },
   ],
+  openai: [
+    { id: "gpt-4o", name: "GPT-4o (최신)" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini (빠름)" },
+  ],
 };
 
-function detectProvider(keys: { claude: string; gemini: string; groq: string }): Provider | null {
+function detectProvider(keys: { claude: string; gemini: string; groq: string; openai: string }): Provider | null {
   if (keys.claude.startsWith("sk-ant-")) return "claude";
   if (keys.gemini.startsWith("AIza")) return "gemini";
   if (keys.groq.startsWith("gsk_")) return "groq";
+  if (keys.openai.startsWith("sk-") && !keys.openai.startsWith("sk-ant-")) return "openai";
   return null;
 }
 
@@ -47,6 +54,8 @@ export default function SettingsScreen() {
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [saved, setSaved] = useState(false);
   const [modalModel, setModalModel] = useState<string | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [ttsVoice, setTtsVoice] = useState("ko-female");
 
   useEffect(() => {
     loadSettings().then((s) => {
@@ -55,6 +64,8 @@ export default function SettingsScreen() {
       setKeys({ claude: s.claudeKey, gemini: s.geminiKey, groq: s.groqKey, openai: s.openaiKey });
       setEnglishMode(s.englishMode);
       setTtsEnabled(s.ttsEnabled);
+      setSystemPrompt(s.systemPrompt);
+      setTtsVoice(s.ttsVoice);
     });
   }, []);
 
@@ -79,7 +90,26 @@ export default function SettingsScreen() {
       SecureStore.setItemAsync(STORE_KEYS.openaiKey, keys.openai),
       SecureStore.setItemAsync(STORE_KEYS.englishMode, String(englishMode)),
       SecureStore.setItemAsync(STORE_KEYS.ttsEnabled, String(ttsEnabled)),
+      SecureStore.setItemAsync(STORE_KEYS.systemPrompt, systemPrompt),
+      SecureStore.setItemAsync(STORE_KEYS.ttsVoice, ttsVoice),
     ]);
+    // 저장 확인 로그
+    console.log("[settings] 저장됨:", {
+      provider,
+      model,
+      claudeKey: keys.claude ? "✓" + keys.claude.slice(0, 8) : "✗",
+      geminiKey: keys.gemini ? "✓" + keys.gemini.slice(0, 8) : "✗",
+      groqKey: keys.groq ? "✓" + keys.groq.slice(0, 8) : "✗",
+      openaiKey: keys.openai ? "✓" + keys.openai.slice(0, 8) : "✗",
+    });
+    // 저장 직후 다시 읽어서 검증
+    const verify = await SecureStore.getItemAsync(STORE_KEYS.provider);
+    const verifyKey = await SecureStore.getItemAsync(
+      provider === "claude" ? STORE_KEYS.claudeKey :
+      provider === "openai" ? STORE_KEYS.openaiKey :
+      provider === "groq" ? STORE_KEYS.groqKey : STORE_KEYS.geminiKey
+    );
+    console.log("[settings] 검증 — provider:", verify, "key:", verifyKey ? "✓" + verifyKey.slice(0, 8) : "✗");
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -100,7 +130,7 @@ export default function SettingsScreen() {
             { k: "gemini" as const, label: "Gemini (Google)", placeholder: "AIza...", hint: "aistudio.google.com — 무료", active: provider === "gemini" },
             { k: "groq" as const, label: "Groq (Llama)", placeholder: "gsk_...", hint: "console.groq.com — 무료", active: provider === "groq" },
             { k: "claude" as const, label: "Claude (Anthropic)", placeholder: "sk-ant-...", hint: "console.anthropic.com — 유료", active: provider === "claude" },
-            { k: "openai" as const, label: "OpenAI (음성 STT)", placeholder: "sk-...", hint: "platform.openai.com — Whisper용", active: false },
+            { k: "openai" as const, label: "OpenAI (GPT / Whisper)", placeholder: "sk-...", hint: "platform.openai.com — 채팅 + 음성", active: provider === "openai" },
           ].map(({ k, label, placeholder, hint, active }) => (
             <View key={k} style={styles.field}>
               <View style={styles.fieldHeader}>
@@ -127,7 +157,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>모델 선택</Text>
           <Text style={styles.sectionDesc}>
-            {provider === "gemini" ? "Gemini" : provider === "groq" ? "Groq" : "Claude"} 모델 중 선택
+            {{ gemini: "Gemini", groq: "Groq", claude: "Claude", openai: "OpenAI" }[provider]} 모델 중 선택
           </Text>
           {PROVIDER_MODELS[provider].map((m) => (
             <TouchableOpacity
@@ -152,9 +182,62 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* 시스템 프롬프트 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>시스템 프롬프트</Text>
+          <Text style={styles.sectionDesc}>AI의 성격과 답변 스타일을 설정합니다. 비워두면 기본값 사용</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {[
+              { label: "코딩 도우미", prompt: "당신은 바이브코딩 전문 AI 어시스턴트입니다. 코딩 질문에 친절하고 실용적으로 답변해주세요." },
+              { label: "영어 튜터", prompt: "You are a friendly English tutor. Correct my English naturally, explain grammar when needed, and keep the conversation going. Reply in English." },
+              { label: "번역가", prompt: "당신은 전문 번역가입니다. 한국어는 영어로, 영어는 한국어로 자연스럽게 번역해주세요. 번역만 답변하세요." },
+              { label: "일반 대화", prompt: "당신은 친절한 AI 어시스턴트입니다. 자연스럽고 편안하게 대화해주세요." },
+            ].map(({ label, prompt }) => (
+              <TouchableOpacity
+                key={label}
+                style={[styles.presetBtn, systemPrompt === prompt && styles.presetBtnActive]}
+                onPress={() => setSystemPrompt(prompt)}
+              >
+                <Text style={[styles.presetText, systemPrompt === prompt && styles.presetTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            {systemPrompt !== "" && (
+              <TouchableOpacity style={styles.presetBtn} onPress={() => setSystemPrompt("")}>
+                <Text style={styles.presetText}>초기화</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TextInput
+            style={[styles.input, { height: 80, textAlignVertical: "top", paddingTop: 12 }]}
+            value={systemPrompt}
+            onChangeText={setSystemPrompt}
+            placeholder="커스텀 프롬프트 직접 입력..."
+            placeholderTextColor="#2a2a2a"
+            multiline
+            maxLength={500}
+          />
+        </View>
+
         {/* 음성 설정 */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>음성 설정</Text>
+          <Text style={styles.sectionDesc}>Edge TTS (Microsoft) — 무료, API 키 불필요</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {[
+              { key: "ko-female", label: "🇰🇷 여성 (선희)" },
+              { key: "ko-male", label: "🇰🇷 남성 (인준)" },
+              { key: "en-female", label: "🇺🇸 Female (Jenny)" },
+              { key: "en-male", label: "🇺🇸 Male (Guy)" },
+            ].map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.presetBtn, ttsVoice === key && styles.presetBtnActive]}
+                onPress={() => setTtsVoice(key)}
+              >
+                <Text style={[styles.presetText, ttsVoice === key && styles.presetTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>
               <Volume2 size={16} color="#39FF14" />
@@ -184,7 +267,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>앱 정보</Text>
           <View style={styles.infoRow}><Text style={styles.infoLabel}>버전</Text><Text style={styles.infoValue}>1.0.0</Text></View>
-          <View style={styles.infoRow}><Text style={styles.infoLabel}>Phase</Text><Text style={styles.infoValue}>4 — VeryTerm 연동</Text></View>
+          <View style={styles.infoRow}><Text style={styles.infoLabel}>Phase</Text><Text style={styles.infoValue}>6 — Edge TTS + PC 제어 + 페어링</Text></View>
         </View>
       </ScrollView>
 
@@ -260,6 +343,10 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: "row", justifyContent: "space-between" },
   infoLabel: { color: "#555", fontSize: 14 },
   infoValue: { color: "#888", fontSize: 14 },
+  presetBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "#222", backgroundColor: "#111" },
+  presetBtnActive: { borderColor: "#39FF14", backgroundColor: "rgba(57,255,20,0.08)" },
+  presetText: { color: "#555", fontSize: 12, fontWeight: "600" },
+  presetTextActive: { color: "#39FF14" },
   // 모달
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "center", alignItems: "center", padding: 24 },
   modalBox: { backgroundColor: "#111", borderRadius: 20, padding: 24, width: "100%", borderWidth: 1, borderColor: "#222", gap: 12 },

@@ -1,7 +1,25 @@
 import * as Speech from "expo-speech";
+import { edgeSpeak, edgeStopSpeaking, type VoiceKey } from "./edge-tts";
 
-export async function speak(text: string, englishMode: boolean): Promise<void> {
-  Speech.stop();
+let useEdge = true;
+
+/**
+ * TTS 재생 — Edge TTS 우선, 실패 시 expo-speech 폴백
+ */
+export async function speak(text: string, englishMode: boolean, voice?: VoiceKey): Promise<void> {
+  stopSpeaking();
+
+  if (useEdge) {
+    try {
+      await edgeSpeak(text, englishMode, voice);
+      return;
+    } catch (e) {
+      console.warn("[TTS] Edge TTS 실패, expo-speech 폴백:", e);
+      useEdge = false;
+    }
+  }
+
+  // 폴백: 디바이스 기본 TTS
   Speech.speak(text, {
     language: englishMode ? "en-US" : "ko-KR",
     rate: englishMode ? 0.9 : 1.0,
@@ -10,5 +28,6 @@ export async function speak(text: string, englishMode: boolean): Promise<void> {
 }
 
 export function stopSpeaking(): void {
+  edgeStopSpeaking().catch(() => {});
   Speech.stop();
 }

@@ -1,50 +1,100 @@
-import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
-let recording: Audio.Recording | null = null;
+let _resolveResult: ((text: string) => void) | null = null;
+let _rejectResult: ((err: Error) => void) | null = null;
+let _partialCallback: ((text: string) => void) | null = null;
+let _finalText = "";
 
-export async function startRecording(): Promise<void> {
-  await Audio.requestPermissionsAsync();
-  await Audio.setAudioModeAsync({
-    allowsRecordingIOS: true,
-    playsInSilentModeIOS: true,
+/**
+ * 디바이스 내장 음성인식 시작 (무료, API 키 불필요)
+ */
+export async function startRecording(lang = "ko-KR"): Promise<void> {
+  const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+  if (!granted) throw new Error("음성 인식 권한이 필요합니다");
+
+  _finalText = "";
+
+  ExpoSpeechRecognitionModule.start({
+    lang,
+    interimResults: true,
+    continuous: false,
   });
-  const { recording: rec } = await Audio.Recording.createAsync(
-    Audio.RecordingOptionsPresets.HIGH_QUALITY
-  );
-  recording = rec;
 }
 
-export async function stopRecording(openaiKey: string): Promise<string> {
-  if (!recording) throw new Error("녹음 중이 아닙니다");
-  await recording.stopAndUnloadAsync();
-  await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-  const uri = recording.getURI();
-  recording = null;
-  if (!uri) throw new Error("녹음 파일 없음");
-  return transcribeWithWhisper(uri, openaiKey);
+/**
+ * 음성인식 중지 → 결과 반환
+ */
+export function stopRecording(_openaiKey?: string, _englishMode?: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    _resolveResult = resolve;
+    _rejectResult = reject;
+
+    // 인식 중지 요청
+    ExpoSpeechRecognitionModule.stop();
+
+    // 5초 타임아웃 — stop 후에도 결과가 안 오면
+    setTimeout(() => {
+      if (_resolveResult) {
+        _resolveResult(_finalText || "");
+        _resolveResult = null;
+        _rejectResult = null;
+      }
+    }, 5000);
+  });
 }
 
-async function transcribeWithWhisper(uri: string, apiKey: string): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", {
-    uri,
-    name: "audio.m4a",
-    type: "audio/m4a",
-  } as any);
-  formData.append("model", "whisper-1");
-  formData.append("language", "ko");
+/**
+ * 부분 인식 결과 콜백 설정 (실시간 타이핑 효과용)
+ */
+export function setPartialCallback(cb: ((text: string) => void) | null) {
+  _partialCallback = cb;
+}
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: formData,
+/**
+ * 이벤트 핸들러 — chat.tsx의 컴포넌트에서 호출
+ * React Hook이 아닌 모듈 레벨로 이벤트 처리
+ */
+export function setupSpeechEvents(): () => void {
+  const resultSub = ExpoSpeechRecognitionModule.addListener("result", (event: any) => {
+    const transcript = event.results?.[0]?.transcript || "";
+    if (event.isFinal) {
+      _finalText = transcript;
+      if (_resolveResult) {
+        _resolveResult(transcript);
+        _resolveResult = null;
+        _rejectResult = null;
+      }
+    } else {
+      // 부분 결과
+      _finalText = transcript;
+      _partialCallback?.(transcript);
+    }
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Whisper 오류 ${res.status}`);
-  }
-  const data = await res.json();
-  return data.text;
+  const errorSub = ExpoSpeechRecognitionModule.addListener("error", (event: any) => {
+    const msg = event.error || "음성 인식 오류";
+    if (_rejectResult) {
+      _rejectResult(new Error(msg));
+      _resolveResult = null;
+      _rejectResult = null;
+    }
+  });
+
+  const endSub = ExpoSpeechRecognitionModule.addListener("end", () => {
+    // 인식 종료 — 결과가 아직 안 왔으면 현재까지의 텍스트 반환
+    if (_resolveResult) {
+      _resolveResult(_finalText || "");
+      _resolveResult = null;
+      _rejectResult = null;
+    }
+  });
+
+  return () => {
+    resultSub.remove();
+    errorSub.remove();
+    endSub.remove();
+  };
 }

@@ -2,10 +2,12 @@ import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Keyboard
 import { useState, useRef, useEffect, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Send, Bot, User, Volume2, VolumeX } from "lucide-react-native";
-import { sendMessage, loadSettings, type Provider } from "../../services/ai-client";
-import { startRecording, stopRecording } from "../../services/stt";
+import { Send, Bot, User, Volume2, VolumeX, Monitor } from "lucide-react-native";
+import { sendMessageStream, loadSettings, getKeyForProvider, type Provider } from "../../services/ai-client";
+import { getSharedClient, isConnected as vtIsConnected, projectsToPromptContext } from "../../services/veryterm-client";
+import { startRecording, stopRecording, setupSpeechEvents, setPartialCallback } from "../../services/stt";
 import { speak, stopSpeaking } from "../../services/tts";
+import Markdown from "react-native-markdown-display";
 
 interface Message {
   id: string;
@@ -31,18 +33,29 @@ export default function ChatScreen() {
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [noKey, setNoKey] = useState(false);
   const [sttError, setSttError] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [ttsVoice, setTtsVoice] = useState("ko-female");
   const micScale = useRef(new Animated.Value(1)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList>(null);
 
   const reloadSettings = useCallback(() => {
     loadSettings().then((s) => {
+      console.log("[chat] reloadSettings:", s.provider, s.model, "keys:", {
+        claude: s.claudeKey ? "✓" : "✗",
+        gemini: s.geminiKey ? "✓" : "✗",
+        groq: s.groqKey ? "✓" : "✗",
+        openai: s.openaiKey ? "✓" : "✗",
+      });
       setProvider(s.provider);
       setModel(s.model);
       setEnglishMode(s.englishMode);
       setTtsEnabled(s.ttsEnabled);
       setOpenaiKey(s.openaiKey);
-      const key = s.provider === "claude" ? s.claudeKey : s.provider === "gemini" ? s.geminiKey : s.groqKey;
+      setCustomPrompt(s.systemPrompt);
+      setTtsVoice(s.ttsVoice);
+      const key = getKeyForProvider(s.provider, s);
+      console.log("[chat] apiKey for", s.provider, ":", key ? "있음(" + key.slice(0, 6) + "...)" : "없음");
       setApiKey(key);
     });
   }, []);
@@ -54,7 +67,9 @@ export default function ChatScreen() {
       setEnglishMode(s.englishMode);
       setTtsEnabled(s.ttsEnabled);
       setOpenaiKey(s.openaiKey);
-      const key = s.provider === "claude" ? s.claudeKey : s.provider === "gemini" ? s.geminiKey : s.groqKey;
+      setCustomPrompt(s.systemPrompt);
+      setTtsVoice(s.ttsVoice);
+      const key = getKeyForProvider(s.provider, s);
       setApiKey(key);
       const greeting = s.englishMode
         ? "Hi! Tap the mic to speak, or type below."
@@ -65,7 +80,12 @@ export default function ChatScreen() {
 
   useFocusEffect(reloadSettings);
 
-  // 녹음 중 맥동 애니메이션
+  // 음성인식 이벤트 리스너
+  useEffect(() => {
+    const cleanup = setupSpeechEvents();
+    return cleanup;
+  }, []);
+
   useEffect(() => {
     if (isRecording) {
       Animated.loop(
@@ -87,15 +107,10 @@ export default function ChatScreen() {
     ]).start();
 
     if (isRecording) {
-      // 녹음 종료 → STT
       setIsRecording(false);
-      if (!openaiKey) {
-        setShowInput(true);
-        return;
-      }
       setIsLoading(true);
       try {
-        const text = await stopRecording(openaiKey);
+        const text = await stopRecording();
         if (text.trim()) {
           setInput(text);
           setShowInput(true);
@@ -109,16 +124,11 @@ export default function ChatScreen() {
         setIsLoading(false);
       }
     } else {
-      // 녹음 시작
-      if (openaiKey) {
-        try {
-          await startRecording();
-          setIsRecording(true);
-          setShowInput(false);
-        } catch {
-          setShowInput(true);
-        }
-      } else {
+      try {
+        await startRecording(englishMode ? "en-US" : "ko-KR");
+        setIsRecording(true);
+        setShowInput(false);
+      } catch {
         setShowInput((v) => !v);
       }
     }
@@ -136,32 +146,150 @@ export default function ChatScreen() {
     const userMsg: Message = { id: Date.now().toString(), role: "user", content };
     setMessages((prev) => {
       const history = [...prev, userMsg];
-      sendAI(history, userMsg);
+      sendAI(history);
       return history;
     });
     setInput("");
     setShowInput(false);
   };
 
-  const sendAI = async (history: Message[], userMsg: Message) => {
+  const sendAI = async (history: Message[]) => {
     setIsLoading(true);
+    console.log("[chat] sendAI 호출:", { provider, model, apiKey: apiKey ? "✓" + apiKey.slice(0, 8) : "✗없음", vtConnected: vtIsConnected() });
     const apiHistory = history
       .filter((m) => m.id !== "0")
       .map((m) => ({ role: m.role, content: m.content }));
+
+    // 시스템 프롬프트 구성: 기본 + VeryTerm 컨텍스트
+    let systemPrompt = customPrompt || (englishMode ? SYSTEM_EN : SYSTEM_KO);
+    const vtContext = projectsToPromptContext();
+    if (vtContext) systemPrompt += vtContext;
+
+    const assistantId = (Date.now() + 1).toString();
+    setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+
     try {
-      const reply = await sendMessage(apiHistory, provider, model, apiKey, englishMode ? SYSTEM_EN : SYSTEM_KO);
-      const assistantMsg: Message = { id: (Date.now() + 1).toString(), role: "assistant", content: reply };
-      setMessages((prev) => [...prev, assistantMsg]);
-      if (ttsEnabled) {
+      await sendMessageStream(
+        apiHistory,
+        provider,
+        model,
+        apiKey,
+        systemPrompt,
+        (chunk) => {
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
+          );
+        }
+      );
+
+      // AI 응답에서 VeryTerm 명령 파싱 + 실행
+      // messagesRef 대신 setMessages 콜백으로 최신 값 읽기
+      const finalContent = await new Promise<string>((resolve) => {
+        setMessages((prev) => {
+          resolve(prev.find((m) => m.id === assistantId)?.content || "");
+          return prev;
+        });
+      });
+
+      const vtCmd = parseVeryTermCommand(finalContent);
+      if (vtCmd && vtIsConnected()) {
+        await executeVeryTermCommand(vtCmd, assistantId, apiHistory, finalContent);
+      } else if (ttsEnabled && finalContent) {
+        // VeryTerm 명령이 없으면 TTS
         setIsSpeaking(true);
-        await speak(reply, englishMode);
-        setIsSpeaking(false);
+        speak(finalContent, englishMode, ttsVoice as any).then(() => setIsSpeaking(false));
       }
     } catch (e: any) {
-      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: "assistant", content: `오류: ${e.message}` }]);
+      setMessages((prev) =>
+        prev.map((m) => m.id === assistantId ? { ...m, content: `오류: ${e.message}` } : m)
+      );
     } finally {
       setIsLoading(false);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  };
+
+  /** AI 응답에서 ```veryterm JSON 블록 파싱 */
+  const parseVeryTermCommand = (text: string): { command: string; cwd?: string } | null => {
+    const match = text.match(/```veryterm\s*\n?\s*(\{[\s\S]*?\})\s*\n?```/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (parsed.command) return { command: parsed.command, cwd: parsed.cwd };
+    } catch {}
+    return null;
+  };
+
+  /** VeryTerm 명령 실행 → 결과를 채팅에 표시 → AI에게 피드백 */
+  const executeVeryTermCommand = async (
+    cmd: { command: string; cwd?: string },
+    assistantId: string,
+    apiHistory: { role: string; content: string }[],
+    aiResponse: string
+  ) => {
+    const client = getSharedClient();
+    if (!client) return;
+
+    // 실행 중 표시
+    const execId = (Date.now() + 2).toString();
+    setMessages((prev) => [...prev, {
+      id: execId, role: "assistant" as const,
+      content: `⚡ 실행 중: \`${cmd.command}\`${cmd.cwd ? `\n📂 ${cmd.cwd}` : ""}`,
+    }]);
+
+    try {
+      const output = await client.run(cmd.command, cmd.cwd);
+      const trimmedOutput = output.length > 2000 ? output.slice(0, 2000) + "\n...(생략)" : output;
+
+      // 실행 결과 표시
+      setMessages((prev) =>
+        prev.map((m) => m.id === execId ? {
+          ...m,
+          content: `⚡ \`${cmd.command}\`\n\`\`\`\n${trimmedOutput || "(출력 없음)"}\n\`\`\``,
+        } : m)
+      );
+
+      // AI에게 결과 피드백 → 분석 요청
+      const feedbackHistory = [
+        ...apiHistory,
+        { role: "assistant" as const, content: aiResponse },
+        { role: "user" as const, content: `[VeryTerm 실행 결과]\n명령: ${cmd.command}\n출력:\n${trimmedOutput}\n\n이 결과를 간단히 분석해주세요.` },
+      ];
+
+      const analysisId = (Date.now() + 3).toString();
+      setMessages((prev) => [...prev, { id: analysisId, role: "assistant" as const, content: "" }]);
+
+      let analysisPrompt = customPrompt || (englishMode ? SYSTEM_EN : SYSTEM_KO);
+      const vtCtx = projectsToPromptContext();
+      if (vtCtx) analysisPrompt += vtCtx;
+
+      await sendMessageStream(
+        feedbackHistory as any,
+        provider, model, apiKey, analysisPrompt,
+        (chunk) => {
+          setMessages((prev) =>
+            prev.map((m) => m.id === analysisId ? { ...m, content: m.content + chunk } : m)
+          );
+        }
+      );
+
+      // 분석 결과 TTS
+      if (ttsEnabled) {
+        const analysisContent = await new Promise<string>((resolve) => {
+          setMessages((prev) => {
+            resolve(prev.find((m) => m.id === analysisId)?.content || "");
+            return prev;
+          });
+        });
+        if (analysisContent) {
+          setIsSpeaking(true);
+          speak(analysisContent, englishMode, ttsVoice as any).then(() => setIsSpeaking(false));
+        }
+      }
+    } catch (e: any) {
+      setMessages((prev) =>
+        prev.map((m) => m.id === execId ? { ...m, content: `⚡ 실행 오류: ${e.message}` } : m)
+      );
     }
   };
 
@@ -169,11 +297,16 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === "user";
+    if (!isUser && item.id !== "0" && !item.content) return null;
     return (
       <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
         {!isUser && <View style={styles.avatar}><Bot size={16} color="#39FF14" /></View>}
         <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-          <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>{item.content}</Text>
+          {isUser ? (
+            <Text style={[styles.bubbleText, styles.bubbleTextUser]}>{item.content}</Text>
+          ) : (
+            <Markdown style={mdStyles}>{item.content}</Markdown>
+          )}
         </View>
         {isUser && <View style={[styles.avatar, styles.avatarUser]}><User size={16} color="#000" /></View>}
       </View>
@@ -187,6 +320,12 @@ export default function ChatScreen() {
         {/* 상단 상태 바 */}
         <View style={styles.topBar}>
           <Text style={styles.modelBadge}>{model.split("-").slice(0, 2).join(" ")}</Text>
+          {vtIsConnected() && (
+            <View style={styles.vtBadge}>
+              <Monitor size={10} color="#39FF14" />
+              <Text style={styles.vtBadgeText}>PC</Text>
+            </View>
+          )}
           {isSpeaking && (
             <TouchableOpacity onPress={() => { stopSpeaking(); setIsSpeaking(false); }} style={styles.speakingBtn}>
               <VolumeX size={14} color="#39FF14" />
@@ -272,7 +411,7 @@ export default function ChatScreen() {
             </Animated.View>
           </Animated.View>
           <Text style={styles.micHint}>
-            {isRecording ? "탭해서 전송" : showInput ? "탭해서 음성 입력" : openaiKey ? "탭해서 말하기" : "탭해서 텍스트 입력"}
+            {isRecording ? "탭해서 전송" : showInput ? "탭해서 음성 입력" : "탭해서 말하기"}
           </Text>
           {!showInput && !isRecording && (
             <TouchableOpacity onPress={() => setShowInput(true)} style={styles.typeToggle}>
@@ -289,6 +428,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#050505" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#0e0e0e" },
   modelBadge: { color: "#333", fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  vtBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(57,255,20,0.1)", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  vtBadgeText: { color: "#39FF14", fontSize: 9, fontWeight: "800" },
   speakingBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(57,255,20,0.1)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   speakingText: { color: "#39FF14", fontSize: 11, fontWeight: "700" },
   list: { padding: 16, gap: 12, paddingBottom: 8 },
@@ -319,4 +460,23 @@ const styles = StyleSheet.create({
   micHint: { color: "#333", fontSize: 12 },
   typeToggle: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#0e0e0e", borderRadius: 10 },
   typeToggleText: { color: "#555", fontSize: 13 },
+});
+
+const mdStyles = StyleSheet.create({
+  body: { color: "#ddd", fontSize: 15, lineHeight: 22 },
+  heading1: { color: "#fff", fontSize: 20, fontWeight: "800", marginVertical: 6 },
+  heading2: { color: "#fff", fontSize: 17, fontWeight: "700", marginVertical: 4 },
+  heading3: { color: "#eee", fontSize: 15, fontWeight: "700", marginVertical: 4 },
+  strong: { color: "#fff", fontWeight: "700" },
+  em: { color: "#ccc", fontStyle: "italic" },
+  link: { color: "#39FF14" },
+  blockquote: { backgroundColor: "rgba(57,255,20,0.05)", borderLeftColor: "#39FF14", borderLeftWidth: 3, paddingLeft: 12, paddingVertical: 4, marginVertical: 4 },
+  code_inline: { backgroundColor: "#1a1a1a", color: "#39FF14", fontSize: 13, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  code_block: { backgroundColor: "#0a0a0a", color: "#39FF14", fontSize: 13, padding: 12, borderRadius: 8, marginVertical: 6 },
+  fence: { backgroundColor: "#0a0a0a", color: "#39FF14", fontSize: 13, padding: 12, borderRadius: 8, marginVertical: 6 },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  list_item: { marginVertical: 2 },
+  paragraph: { marginVertical: 2 },
+  hr: { backgroundColor: "#222", height: 1, marginVertical: 8 },
 });

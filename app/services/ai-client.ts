@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 
-export type Provider = "claude" | "gemini" | "groq";
+export type Provider = "claude" | "gemini" | "groq" | "openai";
 
 export interface AIMessage {
   role: "user" | "assistant";
@@ -17,17 +17,6 @@ export interface ProviderConfig {
 }
 
 export const PROVIDERS: ProviderConfig[] = [
-  {
-    id: "claude",
-    name: "Claude (Anthropic)",
-    models: [
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (빠름)" },
-    ],
-    keyPlaceholder: "sk-ant-...",
-    keyHint: "console.anthropic.com에서 발급",
-    free: false,
-  },
   {
     id: "gemini",
     name: "Gemini (Google)",
@@ -51,6 +40,28 @@ export const PROVIDERS: ProviderConfig[] = [
     keyHint: "console.groq.com에서 무료 발급",
     free: true,
   },
+  {
+    id: "openai",
+    name: "OpenAI (GPT)",
+    models: [
+      { id: "gpt-4o", name: "GPT-4o (최신)" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini (빠름)" },
+    ],
+    keyPlaceholder: "sk-...",
+    keyHint: "platform.openai.com에서 발급",
+    free: false,
+  },
+  {
+    id: "claude",
+    name: "Claude (Anthropic)",
+    models: [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5 (빠름)" },
+    ],
+    keyPlaceholder: "sk-ant-...",
+    keyHint: "console.anthropic.com에서 발급",
+    free: false,
+  },
 ];
 
 export const STORE_KEYS = {
@@ -62,10 +73,12 @@ export const STORE_KEYS = {
   openaiKey: "api_key_openai",
   englishMode: "english_mode",
   ttsEnabled: "tts_enabled",
+  systemPrompt: "system_prompt",
+  ttsVoice: "tts_voice",
 };
 
 export async function loadSettings() {
-  const [provider, model, claudeKey, geminiKey, groqKey, openaiKey, englishMode, ttsEnabled] =
+  const [provider, model, claudeKey, geminiKey, groqKey, openaiKey, englishMode, ttsEnabled, systemPrompt, ttsVoice] =
     await Promise.all([
       SecureStore.getItemAsync(STORE_KEYS.provider),
       SecureStore.getItemAsync(STORE_KEYS.model),
@@ -75,6 +88,8 @@ export async function loadSettings() {
       SecureStore.getItemAsync(STORE_KEYS.openaiKey),
       SecureStore.getItemAsync(STORE_KEYS.englishMode),
       SecureStore.getItemAsync(STORE_KEYS.ttsEnabled),
+      SecureStore.getItemAsync(STORE_KEYS.systemPrompt),
+      SecureStore.getItemAsync(STORE_KEYS.ttsVoice),
     ]);
   return {
     provider: (provider as Provider) || "gemini",
@@ -85,8 +100,24 @@ export async function loadSettings() {
     openaiKey: openaiKey || "",
     englishMode: englishMode === "true",
     ttsEnabled: ttsEnabled !== "false",
+    systemPrompt: systemPrompt || "",
+    ttsVoice: ttsVoice || "ko-female",
   };
 }
+
+export function getKeyForProvider(
+  provider: Provider,
+  keys: { claudeKey: string; geminiKey: string; groqKey: string; openaiKey: string }
+): string {
+  switch (provider) {
+    case "claude": return keys.claudeKey;
+    case "gemini": return keys.geminiKey;
+    case "groq": return keys.groqKey;
+    case "openai": return keys.openaiKey;
+  }
+}
+
+// ── 비스트리밍 (호환용) ──
 
 export async function sendMessage(
   messages: AIMessage[],
@@ -95,22 +126,58 @@ export async function sendMessage(
   apiKey: string,
   systemPrompt?: string
 ): Promise<string> {
+  let result = "";
+  await sendMessageStream(messages, provider, model, apiKey, systemPrompt, (chunk) => {
+    result += chunk;
+  });
+  return result;
+}
+
+// ── 스트리밍 전송 ──
+
+export async function sendMessageStream(
+  messages: AIMessage[],
+  provider: Provider,
+  model: string,
+  apiKey: string,
+  systemPrompt: string | undefined,
+  onChunk: (text: string) => void
+): Promise<void> {
   switch (provider) {
     case "claude":
-      return sendClaude(messages, model, apiKey, systemPrompt);
+      return streamClaude(messages, model, apiKey, systemPrompt, onChunk);
     case "gemini":
-      return sendGemini(messages, model, apiKey, systemPrompt);
+      return fallbackNonStream(() => sendGemini(messages, model, apiKey, systemPrompt), onChunk);
     case "groq":
-      return sendGroq(messages, model, apiKey, systemPrompt);
+      return streamOpenAICompatible(
+        "https://api.groq.com/openai/v1/chat/completions",
+        messages, model, apiKey, systemPrompt, onChunk
+      );
+    case "openai":
+      return streamOpenAICompatible(
+        "https://api.openai.com/v1/chat/completions",
+        messages, model, apiKey, systemPrompt, onChunk
+      );
   }
 }
 
-async function sendClaude(
+async function fallbackNonStream(
+  fn: () => Promise<string>,
+  onChunk: (text: string) => void
+): Promise<void> {
+  const text = await fn();
+  onChunk(text);
+}
+
+// ── Claude 스트리밍 (SSE) ──
+
+async function streamClaude(
   messages: AIMessage[],
   model: string,
   apiKey: string,
-  systemPrompt?: string
-): Promise<string> {
+  systemPrompt: string | undefined,
+  onChunk: (text: string) => void
+): Promise<void> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -121,6 +188,7 @@ async function sendClaude(
     body: JSON.stringify({
       model,
       max_tokens: 2048,
+      stream: true,
       system: systemPrompt || "You are a helpful coding assistant for vibe coding.",
       messages,
     }),
@@ -129,9 +197,46 @@ async function sendClaude(
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || `Claude 오류 ${res.status}`);
   }
-  const data = await res.json();
-  return data.content[0].text;
+  await parseSSE(res, (event, data) => {
+    if (event === "content_block_delta" && data?.delta?.text) {
+      onChunk(data.delta.text);
+    }
+  });
 }
+
+// ── OpenAI 호환 스트리밍 (Groq, OpenAI) ──
+
+async function streamOpenAICompatible(
+  url: string,
+  messages: AIMessage[],
+  model: string,
+  apiKey: string,
+  systemPrompt: string | undefined,
+  onChunk: (text: string) => void
+): Promise<void> {
+  const msgs = systemPrompt
+    ? [{ role: "system" as const, content: systemPrompt }, ...messages]
+    : messages;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model, messages: msgs, max_tokens: 2048, stream: true }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const name = url.includes("groq") ? "Groq" : "OpenAI";
+    throw new Error(err?.error?.message || `${name} 오류 ${res.status}`);
+  }
+  await parseSSE(res, (_event, data) => {
+    const delta = data?.choices?.[0]?.delta?.content;
+    if (delta) onChunk(delta);
+  });
+}
+
+// ── Gemini 비스트리밍 ──
 
 async function sendGemini(
   messages: AIMessage[],
@@ -164,27 +269,26 @@ async function sendGemini(
   return data.candidates[0].content.parts[0].text;
 }
 
-async function sendGroq(
-  messages: AIMessage[],
-  model: string,
-  apiKey: string,
-  systemPrompt?: string
-): Promise<string> {
-  const msgs = systemPrompt
-    ? [{ role: "system", content: systemPrompt }, ...messages]
-    : messages;
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ model, messages: msgs, max_tokens: 2048 }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Groq 오류 ${res.status}`);
+// ── SSE 파서 (RN fetch 호환 — 텍스트 전체 수신 후 파싱) ──
+
+async function parseSSE(
+  res: Response,
+  onEvent: (event: string, data: any) => void
+): Promise<void> {
+  const text = await res.text();
+  let currentEvent = "";
+  for (const line of text.split("\n")) {
+    if (line.startsWith("event: ")) {
+      currentEvent = line.slice(7).trim();
+    } else if (line.startsWith("data: ")) {
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") break;
+      try {
+        const data = JSON.parse(raw);
+        onEvent(currentEvent, data);
+      } catch {
+        // JSON 파싱 실패 무시
+      }
+    }
   }
-  const data = await res.json();
-  return data.choices[0].message.content;
 }
