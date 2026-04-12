@@ -9,6 +9,7 @@ import { getZCClient, isZCConnected, isZCWsOpen, autoConnectZC, type ZeroClawMes
 import { startRecording, stopRecording, setupSpeechEvents, setPartialCallback } from "../../services/stt";
 import { speak, stopSpeaking } from "../../services/tts";
 import Markdown from "react-native-markdown-display";
+import { saveSession, generateTitle } from "../../services/chat-storage";
 
 interface Message {
   id: string;
@@ -37,6 +38,7 @@ export default function ChatScreen() {
   const [customPrompt, setCustomPrompt] = useState("");
   const [ttsVoice, setTtsVoice] = useState("ko-female");
   const [aiMode, setAiMode] = useState<"local" | "zeroclaw">("local");
+  const sessionIdRef = useRef<string>(Date.now().toString());
   const micScale = useRef(new Animated.Value(1)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList>(null);
@@ -184,6 +186,20 @@ export default function ChatScreen() {
     } finally {
       setIsLoading(false);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      // 세션 자동 저장
+      setMessages((prev) => {
+        const saveable = prev.filter((m) => m.id !== "0" && m.content.trim());
+        if (saveable.length >= 2) {
+          saveSession({
+            id: sessionIdRef.current,
+            title: generateTitle(saveable),
+            messages: saveable,
+            createdAt: parseInt(sessionIdRef.current),
+            updatedAt: Date.now(),
+          }).catch(() => {});
+        }
+        return prev;
+      });
     }
   };
 
