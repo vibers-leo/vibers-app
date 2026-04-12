@@ -3,12 +3,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { Monitor, Wifi, WifiOff, Play, Square, RefreshCw, Terminal, Send, ChevronDown, ChevronUp, Lock, Unlock } from "lucide-react-native";
+import { Monitor, Wifi, WifiOff, Play, Square, RefreshCw, Terminal, Send, ChevronDown, ChevronUp, Lock, Unlock, Zap } from "lucide-react-native";
 import {
   type VeryTermProject,
   getSharedClient, getSharedProjects, isConnected as vtIsConnected, isPaired as vtIsPaired,
   connectShared, disconnectShared, refreshProjects, onConnectionChange, autoConnect, pairWithCode, unpair,
 } from "../../services/veryterm-client";
+import {
+  isZCConnected, connectZC, pairZC, disconnectZC, autoConnectZC, onZCChange,
+} from "../../services/zeroclaw-client";
 
 interface CommandLog {
   cmd: string;
@@ -54,7 +57,12 @@ const PROJECT_COMMANDS: Record<string, { label: string; cmd: string }[]> = {
 
 const typeColor: Record<string, string> = { nextjs: "#0070f3", next: "#0070f3", rails: "#cc0000", expo: "#4630eb", node: "#43853d" };
 
+type Tab = "zeroclaw" | "veryterm";
+
 export default function ConnectScreen() {
+  const [activeTab, setActiveTab] = useState<Tab>("zeroclaw");
+
+  // VeryTerm 상태
   const [ip, setIp] = useState("");
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -68,30 +76,85 @@ export default function ConnectScreen() {
   const [freeCmd, setFreeCmd] = useState("");
   const [vtLoading, setVtLoading] = useState<string | null>(null);
   const [showAllProjects, setShowAllProjects] = useState(false);
+
+  // ZeroClaw 상태
+  const [zcIp, setZcIp] = useState("");
+  const [zcPort, setZcPort] = useState("8080");
+  const [zcConnected, setZcConnected] = useState(false);
+  const [zcConnecting, setZcConnecting] = useState(false);
+  const [zcNeedsPairing, setZcNeedsPairing] = useState(false);
+  const [zcPairingCode, setZcPairingCode] = useState("");
+  const [zcPairing, setZcPairing] = useState(false);
+
   const scrollRef = useRef<ScrollView>(null);
 
-  // 공유 상태 동기화
+  // VeryTerm 동기화
   const syncState = useCallback(() => {
     setConnected(vtIsConnected());
     setPaired(vtIsPaired());
     setProjects(getSharedProjects());
   }, []);
 
+  // ZeroClaw 동기화
+  const syncZC = useCallback(() => {
+    setZcConnected(isZCConnected());
+  }, []);
+
   useEffect(() => {
-    // 구독
-    const unsub = onConnectionChange(syncState);
-    // 저장된 IP 로드
+    const unsub1 = onConnectionChange(syncState);
+    const unsub2 = onZCChange(syncZC);
     SecureStore.getItemAsync("veryterm_ip").then((v) => v && setIp(v));
+    SecureStore.getItemAsync("zeroclaw_ip").then((v) => v && setZcIp(v));
+    SecureStore.getItemAsync("zeroclaw_port").then((v) => v && setZcPort(v || "8080"));
     // 자동 연결 시도
     autoConnect().then(syncState);
-    return unsub;
+    autoConnectZC().then(syncZC);
+    return () => { unsub1(); unsub2(); };
   }, []);
 
   useFocusEffect(useCallback(() => {
     syncState();
-    // 연결 중이면 프로젝트 새로고침
+    syncZC();
     if (vtIsConnected()) refreshProjects().then(() => syncState());
   }, []));
+
+  // ── ZeroClaw 핸들러 ──
+  const handleZCConnect = async () => {
+    if (!zcIp.trim()) return;
+    setZcConnecting(true);
+    const result = await connectZC(zcIp, parseInt(zcPort) || 8080);
+    if (result.connected) {
+      setZcNeedsPairing(result.needsPairing);
+      syncZC();
+    } else {
+      Alert.alert("연결 실패", "ZeroClaw가 실행 중인지 확인해주세요.\nPC에서 zeroclaw gateway를 실행하세요.");
+    }
+    setZcConnecting(false);
+  };
+
+  const handleZCPair = async () => {
+    if (zcPairingCode.length < 4) {
+      Alert.alert("오류", "페어링 코드를 입력해주세요");
+      return;
+    }
+    setZcPairing(true);
+    const ok = await pairZC(zcPairingCode);
+    if (ok) {
+      setZcNeedsPairing(false);
+      setZcPairingCode("");
+      syncZC();
+    } else {
+      Alert.alert("페어링 실패", "코드가 일치하지 않습니다.");
+    }
+    setZcPairing(false);
+  };
+
+  const handleZCDisconnect = async () => {
+    await disconnectZC();
+    setZcNeedsPairing(false);
+    setZcPairingCode("");
+    syncZC();
+  };
 
   const handleConnect = async () => {
     if (!ip.trim()) return;
@@ -189,9 +252,93 @@ export default function ConnectScreen() {
         {/* 헤더 */}
         <View style={styles.header}>
           <Monitor size={28} color="#39FF14" />
-          <Text style={styles.title}>PC 제어</Text>
-          {connected && <View style={styles.liveDot} />}
+          <Text style={styles.title}>PC 연결</Text>
+          {(zcConnected || (connected && paired)) && <View style={styles.liveDot} />}
         </View>
+
+        {/* 탭 전환 */}
+        <View style={styles.tabRow}>
+          <TouchableOpacity style={[styles.tabBtn, activeTab === "zeroclaw" && styles.tabBtnActive]} onPress={() => setActiveTab("zeroclaw")}>
+            <Zap size={14} color={activeTab === "zeroclaw" ? "#39FF14" : "#555"} />
+            <Text style={[styles.tabBtnText, activeTab === "zeroclaw" && styles.tabBtnTextActive]}>ZeroClaw</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.tabBtn, activeTab === "veryterm" && styles.tabBtnActive]} onPress={() => setActiveTab("veryterm")}>
+            <Terminal size={14} color={activeTab === "veryterm" ? "#39FF14" : "#555"} />
+            <Text style={[styles.tabBtnText, activeTab === "veryterm" && styles.tabBtnTextActive]}>VeryTerm</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ====== ZeroClaw 탭 ====== */}
+        {activeTab === "zeroclaw" && (<>
+          {/* 연결 상태 */}
+          <View style={[styles.statusCard, zcConnected && styles.statusCardOn, !zcConnected && zcNeedsPairing && styles.statusCardWarn]}>
+            {zcConnected ? <Zap size={18} color="#39FF14" /> : <WifiOff size={18} color="#555" />}
+            <Text style={[styles.statusText, zcConnected && styles.statusTextOn]}>
+              {zcConnected ? `ZeroClaw 연결됨 (${zcIp})` : zcNeedsPairing ? `페어링 필요 (${zcIp})` : "ZeroClaw 연결 안 됨"}
+            </Text>
+            {zcConnected && (
+              <TouchableOpacity onPress={handleZCDisconnect} style={styles.disconnectBtn}>
+                <Text style={styles.disconnectText}>끊기</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* ZeroClaw 연결 폼 */}
+          {!zcConnected && !zcNeedsPairing && (
+            <View style={styles.form}>
+              <TextInput style={styles.input} value={zcIp} onChangeText={setZcIp}
+                placeholder="PC IP (예: 192.168.219.101)" placeholderTextColor="#333"
+                keyboardType="numbers-and-punctuation" autoCapitalize="none" />
+              <TextInput style={styles.input} value={zcPort} onChangeText={setZcPort}
+                placeholder="포트 (기본: 8080)" placeholderTextColor="#333" keyboardType="number-pad" />
+              <TouchableOpacity style={[styles.connectBtn, zcConnecting && styles.connectBtnLoading]}
+                onPress={handleZCConnect} disabled={zcConnecting || !zcIp.trim()} activeOpacity={0.85}>
+                {zcConnecting ? <ActivityIndicator color="#000" size="small" />
+                  : <Text style={styles.connectBtnText}>ZeroClaw 연결</Text>}
+              </TouchableOpacity>
+              <Text style={styles.hint}>PC에서 <Text style={styles.hintCode}>zeroclaw gateway</Text>를 실행하세요</Text>
+            </View>
+          )}
+
+          {/* ZeroClaw 페어링 */}
+          {!zcConnected && zcNeedsPairing && (
+            <View style={styles.pairingCard}>
+              <Text style={styles.pairingTitle}>⚡ ZeroClaw 페어링</Text>
+              <Text style={styles.pairingDesc}>PC 터미널에 표시된 페어링 코드를 입력하세요</Text>
+              <TextInput
+                style={styles.pairingInput}
+                value={zcPairingCode}
+                onChangeText={setZcPairingCode}
+                placeholder="코드 입력"
+                placeholderTextColor="#333"
+                autoCapitalize="characters"
+                textAlign="center"
+              />
+              <TouchableOpacity
+                style={[styles.connectBtn, (zcPairingCode.length < 4 || zcPairing) && styles.connectBtnLoading]}
+                onPress={handleZCPair}
+                disabled={zcPairingCode.length < 4 || zcPairing}
+              >
+                {zcPairing ? <ActivityIndicator color="#000" size="small" />
+                  : <Text style={styles.connectBtnText}>페어링</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ZeroClaw 연결 완료 */}
+          {zcConnected && (
+            <View style={styles.zcInfoCard}>
+              <Zap size={20} color="#39FF14" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.zcInfoTitle}>ZeroClaw AI 엔진 활성</Text>
+                <Text style={styles.zcInfoDesc}>채팅 탭에서 AI 대화 시 ZeroClaw가 처리합니다.{"\n"}API 키 불필요 · 도구 자동 실행 · 세션 영속</Text>
+              </View>
+            </View>
+          )}
+        </>)}
+
+        {/* ====== VeryTerm 탭 ====== */}
+        {activeTab === "veryterm" && (<>
 
         {/* 연결 상태 */}
         <View style={[styles.statusCard, connected && paired && styles.statusCardOn, connected && !paired && styles.statusCardWarn]}>
@@ -382,6 +529,8 @@ export default function ConnectScreen() {
           </View>
         )}
 
+        </>)}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -393,6 +542,16 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
   title: { color: "#fff", fontSize: 24, fontWeight: "900", flex: 1 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#39FF14" },
+  // 탭
+  tabRow: { flexDirection: "row", gap: 8 },
+  tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: "#0e0e0e", borderRadius: 12, borderWidth: 1, borderColor: "#1a1a1a" },
+  tabBtnActive: { borderColor: "#39FF14", backgroundColor: "rgba(57,255,20,0.06)" },
+  tabBtnText: { color: "#555", fontSize: 14, fontWeight: "700" },
+  tabBtnTextActive: { color: "#39FF14" },
+  // ZeroClaw 정보 카드
+  zcInfoCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: "rgba(57,255,20,0.06)", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "rgba(57,255,20,0.2)" },
+  zcInfoTitle: { color: "#39FF14", fontSize: 15, fontWeight: "800" },
+  zcInfoDesc: { color: "#666", fontSize: 12, marginTop: 4, lineHeight: 18 },
   statusCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#0e0e0e", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: "#1a1a1a" },
   statusCardOn: { borderColor: "rgba(57,255,20,0.3)", backgroundColor: "rgba(57,255,20,0.04)" },
   statusCardWarn: { borderColor: "rgba(255,153,0,0.3)", backgroundColor: "rgba(255,153,0,0.04)" },

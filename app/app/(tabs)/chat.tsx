@@ -2,9 +2,10 @@ import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Keyboard
 import { useState, useRef, useEffect, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Send, Bot, User, Volume2, VolumeX, Monitor } from "lucide-react-native";
+import { Send, Bot, User, Volume2, VolumeX, Monitor, Zap } from "lucide-react-native";
 import { sendMessageStream, loadSettings, getKeyForProvider, type Provider } from "../../services/ai-client";
 import { getSharedClient, isConnected as vtIsConnected, projectsToPromptContext } from "../../services/veryterm-client";
+import { getZCClient, isZCConnected, isZCWsOpen, autoConnectZC, type ZeroClawMessage } from "../../services/zeroclaw-client";
 import { startRecording, stopRecording, setupSpeechEvents, setPartialCallback } from "../../services/stt";
 import { speak, stopSpeaking } from "../../services/tts";
 import Markdown from "react-native-markdown-display";
@@ -35,6 +36,7 @@ export default function ChatScreen() {
   const [sttError, setSttError] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [ttsVoice, setTtsVoice] = useState("ko-female");
+  const [aiMode, setAiMode] = useState<"local" | "zeroclaw">("local");
   const micScale = useRef(new Animated.Value(1)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
   const listRef = useRef<FlatList>(null);
@@ -79,6 +81,17 @@ export default function ChatScreen() {
   }, []);
 
   useFocusEffect(reloadSettings);
+
+  // ZeroClaw 자동 연결 + 모드 감지
+  useEffect(() => {
+    autoConnectZC().then((ok) => {
+      if (ok) setAiMode("zeroclaw");
+    });
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    setAiMode(isZCConnected() && isZCWsOpen() ? "zeroclaw" : "local");
+  }, []));
 
   // 음성인식 이벤트 리스너
   useEffect(() => {
@@ -137,7 +150,7 @@ export default function ChatScreen() {
   const submitMessage = async (text: string) => {
     const content = text.trim();
     if (!content || isLoading) return;
-    if (!apiKey) {
+    if (aiMode === "local" && !apiKey) {
       setNoKey(true);
       setTimeout(() => setNoKey(false), 3000);
       return;
@@ -155,49 +168,14 @@ export default function ChatScreen() {
 
   const sendAI = async (history: Message[]) => {
     setIsLoading(true);
-    console.log("[chat] sendAI 호출:", { provider, model, apiKey: apiKey ? "✓" + apiKey.slice(0, 8) : "✗없음", vtConnected: vtIsConnected() });
-    const apiHistory = history
-      .filter((m) => m.id !== "0")
-      .map((m) => ({ role: m.role, content: m.content }));
-
-    // 시스템 프롬프트 구성: 기본 + VeryTerm 컨텍스트
-    let systemPrompt = customPrompt || (englishMode ? SYSTEM_EN : SYSTEM_KO);
-    const vtContext = projectsToPromptContext();
-    if (vtContext) systemPrompt += vtContext;
-
     const assistantId = (Date.now() + 1).toString();
     setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
 
     try {
-      await sendMessageStream(
-        apiHistory,
-        provider,
-        model,
-        apiKey,
-        systemPrompt,
-        (chunk) => {
-          setMessages((prev) =>
-            prev.map((m) => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
-          );
-        }
-      );
-
-      // AI 응답에서 VeryTerm 명령 파싱 + 실행
-      // messagesRef 대신 setMessages 콜백으로 최신 값 읽기
-      const finalContent = await new Promise<string>((resolve) => {
-        setMessages((prev) => {
-          resolve(prev.find((m) => m.id === assistantId)?.content || "");
-          return prev;
-        });
-      });
-
-      const vtCmd = parseVeryTermCommand(finalContent);
-      if (vtCmd && vtIsConnected()) {
-        await executeVeryTermCommand(vtCmd, assistantId, apiHistory, finalContent);
-      } else if (ttsEnabled && finalContent) {
-        // VeryTerm 명령이 없으면 TTS
-        setIsSpeaking(true);
-        speak(finalContent, englishMode, ttsVoice as any).then(() => setIsSpeaking(false));
+      if (aiMode === "zeroclaw" && isZCWsOpen()) {
+        await sendViaZeroClaw(history, assistantId);
+      } else {
+        await sendViaLocal(history, assistantId);
       }
     } catch (e: any) {
       setMessages((prev) =>
@@ -206,6 +184,112 @@ export default function ChatScreen() {
     } finally {
       setIsLoading(false);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  };
+
+  // ── ZeroClaw 모드: WebSocket으로 대화 ──
+  const sendViaZeroClaw = (history: Message[], assistantId: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const client = getZCClient();
+      if (!client) { reject(new Error("ZeroClaw 미연결")); return; }
+
+      const userMsg = history[history.length - 1];
+
+      // 이벤트 핸들러 등록
+      const unsubs: (() => void)[] = [];
+
+      unsubs.push(client.on("chunk", (msg) => {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, content: m.content + (msg.content || "") } : m)
+        );
+      }));
+
+      unsubs.push(client.on("thinking", (msg) => {
+        // thinking은 별도 표시 (선택적)
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, content: m.content + `\n> 💭 ${msg.content}\n` } : m)
+        );
+      }));
+
+      unsubs.push(client.on("tool_call", (msg) => {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? {
+            ...m, content: m.content + `\n⚡ **${msg.name}** 실행 중...\n`
+          } : m)
+        );
+      }));
+
+      unsubs.push(client.on("tool_result", (msg) => {
+        const output = (msg.output || "").length > 1500
+          ? (msg.output || "").slice(0, 1500) + "\n...(생략)"
+          : msg.output || "(출력 없음)";
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? {
+            ...m, content: m.content + `\`\`\`\n${output}\n\`\`\`\n`
+          } : m)
+        );
+      }));
+
+      unsubs.push(client.on("done", (msg) => {
+        unsubs.forEach((u) => u());
+        // TTS
+        if (ttsEnabled) {
+          const fullText = msg.full_response || "";
+          if (fullText) {
+            setIsSpeaking(true);
+            speak(fullText, englishMode, ttsVoice as any).then(() => setIsSpeaking(false));
+          }
+        }
+        resolve();
+      }));
+
+      unsubs.push(client.on("error", (msg) => {
+        unsubs.forEach((u) => u());
+        reject(new Error(msg.message || "ZeroClaw 오류"));
+      }));
+
+      // 메시지 전송
+      try {
+        client.sendMessage(userMsg.content);
+      } catch (e) {
+        unsubs.forEach((u) => u());
+        reject(e);
+      }
+    });
+  };
+
+  // ── 로컬 모드: 기존 직접 API 호출 ──
+  const sendViaLocal = async (history: Message[], assistantId: string) => {
+    const apiHistory = history
+      .filter((m) => m.id !== "0")
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    let systemPrompt = customPrompt || (englishMode ? SYSTEM_EN : SYSTEM_KO);
+    const vtContext = projectsToPromptContext();
+    if (vtContext) systemPrompt += vtContext;
+
+    await sendMessageStream(
+      apiHistory, provider, model, apiKey, systemPrompt,
+      (chunk) => {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, content: m.content + chunk } : m)
+        );
+      }
+    );
+
+    const finalContent = await new Promise<string>((resolve) => {
+      setMessages((prev) => {
+        resolve(prev.find((m) => m.id === assistantId)?.content || "");
+        return prev;
+      });
+    });
+
+    const vtCmd = parseVeryTermCommand(finalContent);
+    if (vtCmd && vtIsConnected()) {
+      await executeVeryTermCommand(vtCmd, assistantId, apiHistory, finalContent);
+    } else if (ttsEnabled && finalContent) {
+      setIsSpeaking(true);
+      speak(finalContent, englishMode, ttsVoice as any).then(() => setIsSpeaking(false));
     }
   };
 
@@ -319,8 +403,15 @@ export default function ChatScreen() {
 
         {/* 상단 상태 바 */}
         <View style={styles.topBar}>
-          <Text style={styles.modelBadge}>{model.split("-").slice(0, 2).join(" ")}</Text>
-          {vtIsConnected() && (
+          {aiMode === "zeroclaw" ? (
+            <View style={styles.zcBadge}>
+              <Zap size={12} color="#39FF14" />
+              <Text style={styles.zcBadgeText}>ZeroClaw</Text>
+            </View>
+          ) : (
+            <Text style={styles.modelBadge}>{model.split("-").slice(0, 2).join(" ")}</Text>
+          )}
+          {vtIsConnected() && aiMode === "local" && (
             <View style={styles.vtBadge}>
               <Monitor size={10} color="#39FF14" />
               <Text style={styles.vtBadgeText}>PC</Text>
@@ -428,6 +519,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#050505" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#0e0e0e" },
   modelBadge: { color: "#333", fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  zcBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(57,255,20,0.15)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  zcBadgeText: { color: "#39FF14", fontSize: 11, fontWeight: "800" },
   vtBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(57,255,20,0.1)", paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
   vtBadgeText: { color: "#39FF14", fontSize: 9, fontWeight: "800" },
   speakingBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(57,255,20,0.1)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
