@@ -110,17 +110,22 @@ export default function ChatScreen() {
         if (newEvents.length > 0) {
           lastEventTs = newEvents[newEvents.length - 1].timestamp;
           for (const event of newEvents) {
-            const emoji = event.type === 'build_success' ? '✅' :
-              event.type === 'build_fail' ? '❌' :
-              event.type === 'test_pass' ? '🧪✅' :
-              event.type === 'test_fail' ? '🧪❌' :
-              event.type === 'commit' ? '📝' :
-              event.type === 'server_start' ? '🚀' :
-              event.type === 'error' ? '⚠️' : 'ℹ️';
+            const eventMeta: Record<string, { emoji: string; label: string }> = {
+              build_success:  { emoji: '✅', label: '빌드 완료' },
+              build_fail:     { emoji: '❌', label: '빌드 실패' },
+              test_pass:      { emoji: '🧪', label: '테스트 통과' },
+              test_fail:      { emoji: '🧪', label: '테스트 실패' },
+              commit:         { emoji: '📝', label: '커밋' },
+              server_start:   { emoji: '🚀', label: '서버 시작' },
+              deploy_success: { emoji: '🎉', label: '배포 완료' },
+              error:          { emoji: '⚠️', label: '오류' },
+            };
+            const meta = eventMeta[event.type] ?? { emoji: 'ℹ️', label: '알림' };
+            const projectName = event.projectId ? ` (${event.projectId})` : '';
             setMessages((prev) => [...prev, {
               id: `evt-${event.timestamp}`,
               role: "assistant" as const,
-              content: `${emoji} **PC 보고** — ${event.message}`,
+              content: `${meta.emoji} **${meta.label}**${projectName} — ${event.message}`,
             }]);
           }
           setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
