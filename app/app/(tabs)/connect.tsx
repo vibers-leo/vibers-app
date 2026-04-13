@@ -330,8 +330,8 @@ export default function ConnectScreen() {
             <View style={styles.zcInfoCard}>
               <Zap size={20} color="#39FF14" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.zcInfoTitle}>ZeroClaw AI 엔진 활성</Text>
-                <Text style={styles.zcInfoDesc}>채팅 탭에서 AI 대화 시 ZeroClaw가 처리합니다.{"\n"}API 키 불필요 · 도구 자동 실행 · 세션 영속</Text>
+                <Text style={styles.zcInfoTitle}>💬 바이버스챗 AI 활성</Text>
+                <Text style={styles.zcInfoDesc}>채팅 탭에서 바이버스챗 AI가 처리합니다.{"\n"}API 키 불필요 · 도구 자동 실행 · 세션 영속</Text>
               </View>
             </View>
           )}

@@ -287,7 +287,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>앱 정보</Text>
           <View style={styles.infoRow}><Text style={styles.infoLabel}>버전</Text><Text style={styles.infoValue}>1.0.0</Text></View>
-          <View style={styles.infoRow}><Text style={styles.infoLabel}>Phase</Text><Text style={styles.infoValue}>6 — Edge TTS + PC 제어 + 페어링</Text></View>
+          <View style={styles.infoRow}><Text style={styles.infoLabel}>Phase</Text><Text style={styles.infoValue}>7 — 바이버스챗 AI + 프로젝트 보고</Text></View>
         </View>
       </ScrollView>
 

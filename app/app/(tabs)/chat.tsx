@@ -463,7 +463,7 @@ export default function ChatScreen() {
           {aiMode === "zeroclaw" ? (
             <View style={styles.zcBadge}>
               <Zap size={12} color="#39FF14" />
-              <Text style={styles.zcBadgeText}>ZeroClaw</Text>
+              <Text style={styles.zcBadgeText}>바이버스챗 💬</Text>
             </View>
           ) : (
             <Text style={styles.modelBadge}>{model.split("-").slice(0, 2).join(" ")}</Text>
