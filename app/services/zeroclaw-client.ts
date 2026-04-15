@@ -297,7 +297,7 @@ export async function disconnectZC() {
 export async function autoConnectZC(): Promise<boolean> {
   const ip = await SecureStore.getItemAsync(STORE.ip);
   if (!ip) return false;
-  const port = parseInt(await SecureStore.getItemAsync(STORE.port) || "8080", 10);
+  const port = parseInt(await SecureStore.getItemAsync(STORE.port) || "42617", 10);
   const result = await connectZC(ip, port);
   return result.connected && !result.needsPairing;
 }

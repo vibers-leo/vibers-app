@@ -142,6 +142,31 @@ export class VeryTermClient {
     return data.events || [];
   }
 
+  /** 터미널 이벤트 실시간 구독 (WebSocket) — 폴링 대체 */
+  subscribeEvents(
+    onEvent: (event: { type: string; message: string; projectId: string; timestamp: number }) => void,
+    onClose?: () => void,
+  ): () => void {
+    const wsBase = this.base.replace("http://", "ws://");
+    const params = new URLSearchParams({ project: "__events__", type: "main" });
+    if (this.token) params.set("token", this.token);
+    const ws = new WebSocket(`${wsBase}/ws/terminal?${params}`);
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "terminal_event" && msg.event) {
+          onEvent(msg.event);
+        }
+      } catch {}
+    };
+
+    ws.onclose = () => onClose?.();
+    ws.onerror = () => onClose?.();
+
+    return () => ws.close();
+  }
+
   async run(command: string, cwd?: string): Promise<string> {
     const res = await fetch(`${this.base}/run`, {
       method: "POST",

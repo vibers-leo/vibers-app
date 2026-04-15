@@ -1,9 +1,9 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, FlatList, ActivityIndicator, Alert } from "react-native";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import { Monitor, Wifi, WifiOff, Play, Square, RefreshCw, Terminal, Send, ChevronDown, ChevronUp, Lock, Unlock, Zap } from "lucide-react-native";
+import { Monitor, Wifi, WifiOff, Play, Square, RefreshCw, Terminal, Send, ChevronDown, ChevronUp, Lock, Unlock, Zap, Activity } from "lucide-react-native";
 import {
   type VeryTermProject,
   getSharedClient, getSharedProjects, isConnected as vtIsConnected, isPaired as vtIsPaired,
@@ -57,7 +57,14 @@ const PROJECT_COMMANDS: Record<string, { label: string; cmd: string }[]> = {
 
 const typeColor: Record<string, string> = { nextjs: "#0070f3", next: "#0070f3", rails: "#cc0000", expo: "#4630eb", node: "#43853d" };
 
-type Tab = "zeroclaw" | "veryterm";
+type Tab = "zeroclaw" | "veryterm" | "progress";
+
+interface ProgressEvent {
+  type: string;
+  message: string;
+  projectId: string;
+  timestamp: number;
+}
 
 export default function ConnectScreen() {
   const [activeTab, setActiveTab] = useState<Tab>("zeroclaw");
@@ -86,6 +93,9 @@ export default function ConnectScreen() {
   const [zcPairingCode, setZcPairingCode] = useState("");
   const [zcPairing, setZcPairing] = useState(false);
 
+  // 진행현황 이벤트
+  const [progressEvents, setProgressEvents] = useState<ProgressEvent[]>([]);
+
   const scrollRef = useRef<ScrollView>(null);
 
   // VeryTerm 동기화
@@ -99,6 +109,17 @@ export default function ConnectScreen() {
   const syncZC = useCallback(() => {
     setZcConnected(isZCConnected());
   }, []);
+
+  // 이벤트 구독 (VeryTerm WS)
+  useEffect(() => {
+    if (!vtIsConnected() || !vtIsPaired()) return;
+    const client = getSharedClient();
+    if (!client) return;
+    const unsub = client.subscribeEvents((ev) => {
+      setProgressEvents((prev) => [ev, ...prev].slice(0, 100));
+    });
+    return unsub;
+  }, [connected, paired]);
 
   useEffect(() => {
     const unsub1 = onConnectionChange(syncState);
@@ -266,6 +287,11 @@ export default function ConnectScreen() {
             <Terminal size={14} color={activeTab === "veryterm" ? "#39FF14" : "#555"} />
             <Text style={[styles.tabBtnText, activeTab === "veryterm" && styles.tabBtnTextActive]}>VeryTerm</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.tabBtn, activeTab === "progress" && styles.tabBtnActive]} onPress={() => setActiveTab("progress")}>
+            <Activity size={14} color={activeTab === "progress" ? "#39FF14" : "#555"} />
+            <Text style={[styles.tabBtnText, activeTab === "progress" && styles.tabBtnTextActive]}>진행현황</Text>
+            {progressEvents.length > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{progressEvents.length > 99 ? "99+" : progressEvents.length}</Text></View>}
+          </TouchableOpacity>
         </View>
 
         {/* ====== ZeroClaw 탭 ====== */}
@@ -290,7 +316,7 @@ export default function ConnectScreen() {
                 placeholder="PC IP (예: 192.168.219.101)" placeholderTextColor="#333"
                 keyboardType="numbers-and-punctuation" autoCapitalize="none" />
               <TextInput style={styles.input} value={zcPort} onChangeText={setZcPort}
-                placeholder="포트 (기본: 8080)" placeholderTextColor="#333" keyboardType="number-pad" />
+                placeholder="포트 (기본: 42617)" placeholderTextColor="#333" keyboardType="number-pad" />
               <TouchableOpacity style={[styles.connectBtn, zcConnecting && styles.connectBtnLoading]}
                 onPress={handleZCConnect} disabled={zcConnecting || !zcIp.trim()} activeOpacity={0.85}>
                 {zcConnecting ? <ActivityIndicator color="#000" size="small" />
@@ -531,6 +557,54 @@ export default function ConnectScreen() {
 
         </>)}
 
+        {/* ====== 진행현황 탭 ====== */}
+        {activeTab === "progress" && (<>
+          <Text style={styles.sectionTitle}>프로젝트 진행현황</Text>
+
+          {!connected || !paired ? (
+            <View style={styles.progressEmpty}>
+              <Activity size={28} color="#333" />
+              <Text style={styles.progressEmptyText}>VeryTerm에 연결하면{"\n"}실시간 작업 현황을 볼 수 있어요</Text>
+            </View>
+          ) : progressEvents.length === 0 ? (
+            <View style={styles.progressEmpty}>
+              <Activity size={28} color="#333" />
+              <Text style={styles.progressEmptyText}>아직 감지된 작업이 없어요{"\n"}터미널에서 빌드/커밋/배포를 실행해보세요</Text>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity onPress={() => setProgressEvents([])} style={styles.progressClearBtn}>
+                <Text style={styles.progressClearBtnText}>기록 지우기</Text>
+              </TouchableOpacity>
+              {progressEvents.map((ev) => {
+                const meta: Record<string, { emoji: string; color: string }> = {
+                  build_success: { emoji: "✅", color: "#39FF14" },
+                  build_fail:    { emoji: "❌", color: "#ff4444" },
+                  test_pass:     { emoji: "🧪", color: "#39FF14" },
+                  test_fail:     { emoji: "🧪", color: "#ff4444" },
+                  commit:        { emoji: "📝", color: "#4fc3f7" },
+                  server_start:  { emoji: "🚀", color: "#ff9900" },
+                  deploy_success:{ emoji: "🎉", color: "#39FF14" },
+                  error:         { emoji: "⚠️", color: "#ff4444" },
+                  info:          { emoji: "ℹ️", color: "#888" },
+                };
+                const m = meta[ev.type] ?? { emoji: "ℹ️", color: "#555" };
+                const time = new Date(ev.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                return (
+                  <View key={`${ev.timestamp}-${ev.type}`} style={[styles.eventCard, { borderLeftColor: m.color }]}>
+                    <View style={styles.eventHeader}>
+                      <Text style={styles.eventEmoji}>{m.emoji}</Text>
+                      <Text style={[styles.eventProject, { color: m.color }]}>{ev.projectId}</Text>
+                      <Text style={styles.eventTime}>{time}</Text>
+                    </View>
+                    <Text style={styles.eventMsg}>{ev.message}</Text>
+                  </View>
+                );
+              })}
+            </>
+          )}
+        </>)}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -543,8 +617,20 @@ const styles = StyleSheet.create({
   title: { color: "#fff", fontSize: 24, fontWeight: "900", flex: 1 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#39FF14" },
   // 탭
-  tabRow: { flexDirection: "row", gap: 8 },
-  tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, backgroundColor: "#0e0e0e", borderRadius: 12, borderWidth: 1, borderColor: "#1a1a1a" },
+  tabRow: { flexDirection: "row", gap: 6 },
+  tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 10, backgroundColor: "#0e0e0e", borderRadius: 12, borderWidth: 1, borderColor: "#1a1a1a" },
+  badge: { backgroundColor: "#39FF14", borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1, minWidth: 16, alignItems: "center" },
+  badgeText: { color: "#000", fontSize: 9, fontWeight: "900" },
+  eventCard: { backgroundColor: "#0e0e0e", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#1a1a1a", borderLeftWidth: 3, gap: 6 },
+  eventHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  eventEmoji: { fontSize: 16 },
+  eventProject: { fontSize: 13, fontWeight: "800", flex: 1 },
+  eventTime: { color: "#444", fontSize: 11 },
+  eventMsg: { color: "#888", fontSize: 12, fontFamily: "monospace" },
+  progressClearBtn: { alignSelf: "flex-end" as const, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#1a1a1a", borderRadius: 8 },
+  progressClearBtnText: { color: "#555", fontSize: 12 },
+  progressEmpty: { alignItems: "center" as const, justifyContent: "center" as const, paddingVertical: 60, gap: 12 },
+  progressEmptyText: { color: "#444", fontSize: 14, textAlign: "center" as const, lineHeight: 22 },
   tabBtnActive: { borderColor: "#39FF14", backgroundColor: "rgba(57,255,20,0.06)" },
   tabBtnText: { color: "#555", fontSize: 14, fontWeight: "700" },
   tabBtnTextActive: { color: "#39FF14" },

@@ -95,45 +95,79 @@ export default function ChatScreen() {
     setAiMode(isZCConnected() && isZCWsOpen() ? "zeroclaw" : "local");
   }, []));
 
-  // PC 터미널 이벤트 수신 → 채팅에 시스템 메시지로 표시
+  // PC 터미널 이벤트 실시간 수신 → ZeroClaw AI 보고 (AIChatPanel과 동일 패턴)
   useEffect(() => {
     if (!vtIsConnected() || !vtIsPaired()) return;
     const client = getSharedClient();
     if (!client) return;
 
-    // 폴링으로 이벤트 체크 (WebSocket 터미널에 연결 안 됐을 때)
-    let lastEventTs = Date.now();
-    const interval = setInterval(async () => {
-      try {
-        const events = await client.getEvents();
-        const newEvents = events.filter((e: any) => e.timestamp > lastEventTs);
-        if (newEvents.length > 0) {
-          lastEventTs = newEvents[newEvents.length - 1].timestamp;
-          for (const event of newEvents) {
-            const eventMeta: Record<string, { emoji: string; label: string }> = {
-              build_success:  { emoji: '✅', label: '빌드 완료' },
-              build_fail:     { emoji: '❌', label: '빌드 실패' },
-              test_pass:      { emoji: '🧪', label: '테스트 통과' },
-              test_fail:      { emoji: '🧪', label: '테스트 실패' },
-              commit:         { emoji: '📝', label: '커밋' },
-              server_start:   { emoji: '🚀', label: '서버 시작' },
-              deploy_success: { emoji: '🎉', label: '배포 완료' },
-              error:          { emoji: '⚠️', label: '오류' },
-            };
-            const meta = eventMeta[event.type] ?? { emoji: 'ℹ️', label: '알림' };
-            const projectName = event.projectId ? ` (${event.projectId})` : '';
-            setMessages((prev) => [...prev, {
-              id: `evt-${event.timestamp}`,
-              role: "assistant" as const,
-              content: `${meta.emoji} **${meta.label}**${projectName} — ${event.message}`,
-            }]);
-          }
-          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-        }
-      } catch {}
-    }, 5000);
+    const eventLabels: Record<string, string> = {
+      build_success: '빌드 완료', build_fail: '빌드 실패',
+      test_pass: '테스트 통과', test_fail: '테스트 실패',
+      commit: '커밋 완료', server_start: '서버 시작',
+      error: '오류 발생', deploy_success: '배포 완료', info: '정보',
+    };
 
-    return () => clearInterval(interval);
+    const unsub = client.subscribeEvents((event) => {
+      const zcClient = getZCClient();
+      if (zcClient && isZCWsOpen()) {
+        // ZeroClaw 연결 시 → AI에게 보고 요청 (PC AIChatPanel 동일 패턴)
+        const label = eventLabels[event.type] || event.type;
+        const isSuccess = ['build_success', 'test_pass', 'deploy_success', 'commit'].includes(event.type);
+        const isFail = ['build_fail', 'test_fail', 'error'].includes(event.type);
+        const tone = isSuccess ? '✅ 완료' : isFail ? '❌ 문제 발생' : 'ℹ️ 정보';
+        const projectName = event.projectId || '알 수 없음';
+
+        const assistantId = `evt-${event.timestamp}`;
+        setMessages((prev) => [...prev, { id: assistantId, role: "assistant" as const, content: '' }]);
+        setIsLoading(true);
+
+        const content = [
+          `[바이버스PC 작업 감지 — ${tone}]`,
+          `프로젝트: ${projectName}`,
+          `이벤트: ${label}`,
+          `내용: ${event.message}`,
+          ``,
+          `위 작업 결과를 한국어로 간결하게 보고해줘. 실패/에러면 가능한 원인도 짧게 언급해줘.`,
+        ].join('\n');
+
+        // 이벤트 핸들러로 응답 수신
+        const unsubs: (() => void)[] = [];
+        unsubs.push(zcClient.on('chunk', (msg) => {
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId ? { ...m, content: m.content + (msg.content || '') } : m)
+          );
+        }));
+        unsubs.push(zcClient.on('done', () => {
+          unsubs.forEach((u) => u());
+          setIsLoading(false);
+          setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+        }));
+        unsubs.push(zcClient.on('error', () => {
+          unsubs.forEach((u) => u());
+          setIsLoading(false);
+        }));
+
+        try {
+          zcClient.sendMessage(content);
+        } catch {
+          unsubs.forEach((u) => u());
+          setIsLoading(false);
+        }
+      } else {
+        // ZeroClaw 미연결 시 → raw 이벤트 표시 (폴백)
+        const label = eventLabels[event.type] || event.type;
+        const projectName = event.projectId ? ` (${event.projectId})` : '';
+        setMessages((prev) => [...prev, {
+          id: `evt-${event.timestamp}`,
+          role: "assistant" as const,
+          content: `📡 **${label}**${projectName}\n${event.message}`,
+        }]);
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    });
+
+    return unsub;
   }, []);
 
   // 음성인식 이벤트 리스너
