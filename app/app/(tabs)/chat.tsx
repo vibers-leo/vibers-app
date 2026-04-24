@@ -1,5 +1,6 @@
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Animated } from "react-native";
 import { useState, useRef, useEffect, useCallback } from "react";
+import NetInfo from "@react-native-community/netinfo";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Send, Bot, User, Volume2, VolumeX, Monitor, Zap } from "lucide-react-native";
@@ -8,6 +9,7 @@ import { getSharedClient, isConnected as vtIsConnected, isPaired as vtIsPaired, 
 import { getZCClient, isZCConnected, isZCWsOpen, autoConnectZC, type ZeroClawMessage } from "../../services/zeroclaw-client";
 import { startRecording, stopRecording, setupSpeechEvents, setPartialCallback } from "../../services/stt";
 import { speak, stopSpeaking } from "../../services/tts";
+import { getAIErrorMessage } from "../../lib/ai-errors";
 import Markdown from "react-native-markdown-display";
 import { saveSession, generateTitle } from "../../services/chat-storage";
 
@@ -41,6 +43,8 @@ export default function ChatScreen() {
   const sessionIdRef = useRef<string>(Date.now().toString());
   const micScale = useRef(new Animated.Value(1)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
+  const [isOffline, setIsOffline] = useState(false);
+  const lastSendRef = useRef(0);
   const listRef = useRef<FlatList>(null);
 
   const reloadSettings = useCallback(() => {
@@ -83,6 +87,13 @@ export default function ChatScreen() {
   }, []);
 
   useFocusEffect(reloadSettings);
+
+  useEffect(() => {
+    const unsub = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+    });
+    return unsub;
+  }, []);
 
   // ZeroClaw 자동 연결 + 모드 감지
   useEffect(() => {
@@ -225,8 +236,16 @@ export default function ChatScreen() {
   };
 
   const submitMessage = async (text: string) => {
+    const now = Date.now();
+    if (now - lastSendRef.current < 1500) return;
+    lastSendRef.current = now;
+
     const content = text.trim();
     if (!content || isLoading) return;
+    if (isOffline) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "📡 인터넷 연결이 없습니다. Wi-Fi 또는 데이터를 확인해주세요." }]);
+      return;
+    }
     if (aiMode === "local" && !apiKey) {
       setNoKey(true);
       setTimeout(() => setNoKey(false), 3000);
@@ -256,7 +275,7 @@ export default function ChatScreen() {
       }
     } catch (e: any) {
       setMessages((prev) =>
-        prev.map((m) => m.id === assistantId ? { ...m, content: `오류: ${e.message}` } : m)
+        prev.map((m) => m.id === assistantId ? { ...m, content: getAIErrorMessage(e) } : m)
       );
     } finally {
       setIsLoading(false);
