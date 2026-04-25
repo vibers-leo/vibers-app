@@ -34,10 +34,6 @@ export default {
       'expo-font',
       'expo-secure-store',
       'expo-asset',
-      [
-        'expo-av',
-        { microphonePermission: '바이버스챗이 음성 입력을 위해 마이크 권한이 필요합니다.' },
-      ],
       './plugins/withXcode26Fix',
       [
         '@sentry/react-native/expo',

@@ -1,7 +1,8 @@
 import * as Speech from "expo-speech";
 import { edgeSpeak, edgeStopSpeaking, type VoiceKey } from "./edge-tts";
 
-let useEdge = true;
+// expo-av 제거로 Edge TTS 비활성화 — expo-speech만 사용
+let useEdge = false;
 
 /**
  * TTS 재생 — Edge TTS 우선, 실패 시 expo-speech 폴백
